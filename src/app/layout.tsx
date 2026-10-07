@@ -3,12 +3,22 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: { default: "MediCare Local – medicines & healthcare delivered locally", template: "%s · MediCare Local" },
+  title: { default: "DawaDost: medicines, delivered locally", template: "%s · DawaDost" },
   description: "Order medicines from nearby verified pharmacies, upload prescriptions and track delivery – built for small towns.",
   manifest: "/manifest.webmanifest",
-  applicationName: "MediCare Local",
-  appleWebApp: { capable: true, title: "MediCare Local", statusBarStyle: "default" },
-  icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
+  applicationName: "DawaDost",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  appleWebApp: { capable: true, title: "DawaDost", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
+  },
+  openGraph: { title: "DawaDost: medicines, delivered locally", description: "Order from verified nearby pharmacies. Prescription checked, delivered to your door.", siteName: "DawaDost", type: "website", images: [{ url: "/brand/og.png", width: 1200, height: 630, alt: "DawaDost" }] },
+  twitter: { card: "summary_large_image", title: "DawaDost", description: "Medicines, delivered locally.", images: ["/brand/og.png"] },
   formatDetection: { telephone: false },
 };
 

@@ -1,7 +1,7 @@
 import type { Key } from "./index";
 
 export const hi: Partial<Record<Key, string>> = {
-  appName: "मेडीकेयर लोकल",
+  appName: "दवा दोस्त",
   tagline: "दवाइयाँ और स्वास्थ्य सेवाएँ, आपके अपने शहर से।",
   deliveringTo: "डिलीवरी का स्थान",
   changeArea: "बदलें",

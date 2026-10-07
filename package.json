@@ -1,5 +1,5 @@
 {
-  "name": "medicare",
+  "name": "dawadost",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,10 +9,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "icons": "node scripts/make-icons.mjs",
     "db:reset": "tsx --env-file=.env.local scripts/db-reset.ts",
     "db:up": "docker compose up -d",
-    "smoke": "node scripts/smoke.mjs http://localhost:3100"
+    "smoke": "node scripts/smoke.mjs http://localhost:3100",
+    "brand": "node scripts/make-brand.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -37,6 +37,7 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.8",
     "postcss": "^8.5.29",
+    "puppeteer-core": "^25.12.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",

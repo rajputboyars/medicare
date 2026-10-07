@@ -4,9 +4,9 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "MediCare Local",
-    short_name: "MediCare",
-    description: "Medicines delivered locally from verified nearby pharmacies.",
+    name: "DawaDost",
+    short_name: "DawaDost",
+    description: "Medicines, delivered locally from verified nearby pharmacies.",
     lang: "en-IN",
     dir: "ltr",
     start_url: "/?source=pwa",

@@ -1,4 +1,4 @@
-# MediCare Local: V1 medicine delivery
+# DawaDost (दवा दोस्त): V1 medicine delivery
 
 Medicines delivered locally for small towns. Customer app, pharmacy dashboard, admin dashboard and a rider PWA.
 Next.js 16 (App Router) · TypeScript · Tailwind v4 · React Query · Zustand · React Hook Form + Zod · Mongoose / MongoDB · JWT sessions (jose).
@@ -23,10 +23,15 @@ riders `rider@`, `rider2@` … `rider5@example.com` (rider5 is awaiting verifica
 
 Checks: `npm run typecheck && npm run lint && npm test` · `npm run smoke` (79 HTTP checks against a running server).
 
+## Brand
+
+**DawaDost** (*dawa* = medicine, *dost* = friend). Mark: a map pin with a medical cross, i.e. a verified pharmacy near you, with an amber "delivery" shadow. Guide, colours and usage rules: [docs/brand.md](docs/brand.md).
+Master files are in `public/brand/*.svg` and `public/favicon.svg`; `npm run brand` renders every PNG icon, `favicon.ico` (16/32/48), the logo PNGs and the OG image with a local Chrome. React component: `src/components/brand/logo.tsx`.
+
 ## PWA
 
-Two installable apps from one codebase: **MediCare Local** (customers, scope `/`) and **MediCare Rider** (`/delivery`, own manifest at `/rider.webmanifest`, own icon and theme colour).
-Maskable + Apple touch icons (`npm run icons` regenerates them), install card on Profile and the rider home (Android prompt; "Add to Home Screen" steps on iOS), offline banner, and a service worker that precaches the offline page, caches static assets, and **never caches `/api` or prescription files**.
+Two installable apps from one codebase: **DawaDost** (customers, scope `/`) and **DawaDost Rider** (`/delivery`, own manifest at `/rider.webmanifest`, own icon and theme colour).
+Maskable + Apple touch icons (`npm run brand` regenerates them), install card on Profile and the rider home (Android prompt; "Add to Home Screen" steps on iOS), offline banner, and a service worker that precaches the offline page, caches static assets, and **never caches `/api` or prescription files**.
 The service worker registers in production builds only (set `NEXT_PUBLIC_SW_DEV=1` to test it in dev). Ordering always needs a connection so stock and prescription rules are enforced; the cart is kept on the phone while offline.
 Verified in headless Chrome: no manifest or installability errors, worker activates, offline navigation shows the offline page.
 

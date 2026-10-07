@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img" aria-label="DawaDost">
+  <title>DawaDost</title>
+  <rect width="64" height="64" rx="14" fill="#14b8a6"/>
+  <ellipse cx="32" cy="58.4" rx="8.5" ry="2" fill="#f59e0b"/>
+  <path d="M32 8.5c-10.7 0-18.8 8.1-18.8 18.5 0 12.7 13.9 25 17.8 28.5a1.5 1.5 0 0 0 2 0c3.9-3.5 17.8-15.8 17.8-28.5C50.8 16.6 42.7 8.5 32 8.5z" fill="#fff"/>
+  <path d="M28.6 18.2h6.8v6.9h6.9v6.8h-6.9v6.9h-6.8v-6.9h-6.9v-6.8h6.9z" fill="#0d5f59"/>
+  <text x="78" y="38" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="32" font-weight="800" letter-spacing="-0.8" fill="#ffffff">Dawa<tspan fill="#5eead4">Dost</tspan></text>
+  <text x="79" y="55" font-family="'Nirmala UI','Noto Sans Devanagari','Mangal',sans-serif" font-size="13" font-weight="600" fill="#a7c4c0">दवा दोस्त</text>
+</svg>

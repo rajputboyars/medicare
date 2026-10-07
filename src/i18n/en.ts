@@ -1,5 +1,5 @@
 export const en = {
-  appName: "MediCare Local",
+  appName: "DawaDost",
   tagline: "Medicines and healthcare services delivered locally.",
   deliveringTo: "Delivering to",
   changeArea: "Change",

@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { Home, Pill, Bookmark, ClipboardList, User, ShoppingBag, Phone, MessageCircle, Upload, Search } from "lucide-react";
 import type { ReactNode } from "react";
 import { LocationPicker } from "./location-picker";
+import { Logo, LogoMark } from "@/components/brand/logo";
 import { useCartSync } from "@/lib/use-cart-sync";
 import { useCart } from "@/lib/store";
 import { SUPPORT_PHONE, SUPPORT_WA, useMe, useT } from "@/lib/hooks";
@@ -34,9 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_1fr]">
       {/* Desktop sidebar */}
       <aside className="no-print sticky top-0 hidden h-dvh flex-col gap-1 border-r border-line bg-white p-4 lg:flex" aria-label="Main">
-        <Link href="/" className="mb-4 flex items-center gap-2 px-2 text-xl font-extrabold text-brand-700">
-          <span className="grid size-9 place-items-center rounded-xl bg-brand-600 text-white" aria-hidden>+</span> {t("appName")}
-        </Link>
+        <Link href="/" className="mb-4 px-2" aria-label="DawaDost home"><Logo size={40} /></Link>
         {[...NAV.map((n) => ({ href: n.href, label: t(n.key), icon: n.icon, active: n.match(path) })), ...SIDE_EXTRA.map((n) => ({ ...n, active: path.startsWith(n.href) }))].map((n) => (
           <Link key={n.href} href={n.href} aria-current={n.active ? "page" : undefined}
             className={clsx("flex min-h-12 items-center gap-3 rounded-2xl px-3 font-semibold", n.active ? "bg-brand-50 text-brand-800" : "hover:bg-stone-100")}>
@@ -52,18 +51,18 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="no-print sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2 sm:px-6">
             <div className="flex min-w-0 items-center gap-2">
-              <Link href="/" className="grid size-10 place-items-center rounded-xl bg-brand-600 text-xl font-extrabold text-white lg:hidden" aria-label="MediCare Local home">+</Link>
+              <Link href="/" className="grid min-h-12 min-w-12 place-items-center lg:hidden" aria-label="DawaDost home"><LogoMark className="size-10" /></Link>
               <LocationPicker />
             </div>
             <div className="flex items-center gap-1">
-              <a href={`https://wa.me/${SUPPORT_WA}?text=Hello%2C%20I%20need%20help%20with%20my%20order`} className="grid min-h-12 min-w-12 place-items-center rounded-2xl text-[#1a8d4a] hover:bg-stone-100" aria-label={t("whatsappSupport")}>
+              <a href={`https://wa.me/${SUPPORT_WA}?text=Hello%2C%20I%20need%20help%20with%20my%20order`} className="hidden min-h-12 min-w-12 place-items-center rounded-2xl text-[#1a8d4a] hover:bg-stone-100 sm:grid" aria-label={t("whatsappSupport")}>
                 <MessageCircle className="size-6" aria-hidden />
               </a>
               <Link href="/checkout" className="relative grid min-h-12 min-w-12 place-items-center rounded-2xl hover:bg-stone-100" aria-label={`Cart, ${count} items`}>
                 <ShoppingBag className="size-6" aria-hidden />
                 {count > 0 && <span className="absolute right-1 top-1 grid min-w-5 place-items-center rounded-full bg-brand-600 px-1 text-xs font-bold text-white">{count}</span>}
               </Link>
-              {me.data === null && <Link href="/login" className="ml-1 flex min-h-12 items-center whitespace-nowrap rounded-2xl bg-brand-600 px-4 font-semibold text-white">{t("login")}</Link>}
+              {me.data === null && <Link href="/login" className="ml-1 flex min-h-12 items-center whitespace-nowrap rounded-2xl bg-brand-600 px-3.5 font-semibold text-white sm:px-4">{t("login")}</Link>}
             </div>
           </div>
         </header>

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>You are offline</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #faf8f4; color: #1c2530; margin: 0; display: grid; min-height: 100vh; place-items: center; text-align: center; padding: 24px; }
+    main { max-width: 420px; }
+    h1 { font-size: 1.6rem; }
+    a, button { display: inline-block; margin: 8px; padding: 14px 22px; border-radius: 16px; font-size: 1.05rem; font-weight: 700; text-decoration: none; border: 0; cursor: pointer; }
+    button { background: #0f766e; color: #fff; }
+    a { background: #fff; color: #0d5f59; border: 2px solid #0f766e; }
+    .emg { margin-top: 24px; color: #b91c1c; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>No internet right now</h1>
+    <p>Please check your connection. Your cart is saved on this phone.</p>
+    <button onclick="location.reload()">Try again</button>
+    <a href="tel:+911800000000">Call support</a>
+    <p class="emg">For life-threatening emergencies, call 112 or 108 immediately.</p>
+  </main>
+</body>
+</html>

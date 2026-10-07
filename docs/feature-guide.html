@@ -1,0 +1,303 @@
+<title>MediCare Local Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Layout: single reading column. Guide first (who it helps, how ordering works), then the build checkpoint as a filterable list. */
+  :root {
+    --bg: #f4f7f7;
+    --surface: #ffffff;
+    --fg: #14232a;
+    --muted: #51656d;
+    --line: #d8e2e4;
+    --accent: #0f766e;
+    --accent-soft: #dff3ef;
+    --done: #15803d;
+    --done-soft: #e3f5e8;
+    --demo: #a35a00;
+    --demo-soft: #fdf0d9;
+    --next: #4b5b8c;
+    --next-soft: #e8ecf8;
+    --alert: #b42318;
+    --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "DM Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1a1f; --surface: #15262c; --fg: #e6f0f1; --muted: #9db2b8; --line: #27414a;
+      --accent: #4fd1c0; --accent-soft: #14383a; --done: #6fdc8c; --done-soft: #153a22;
+      --demo: #f2b45a; --demo-soft: #3c2d12; --next: #a9b8ee; --next-soft: #232c4d; --alert: #ff8a7a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1a1f; --surface: #15262c; --fg: #e6f0f1; --muted: #9db2b8; --line: #27414a;
+    --accent: #4fd1c0; --accent-soft: #14383a; --done: #6fdc8c; --done-soft: #153a22;
+    --demo: #f2b45a; --demo-soft: #3c2d12; --next: #a9b8ee; --next-soft: #232c4d; --alert: #ff8a7a;
+    color-scheme: dark;
+  }
+
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.55; padding-inline: 16px; padding-block: 0; }
+  .wrap { max-width: 64rem; margin-inline: auto; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 44px; }
+  h1, h2, h3, p { margin: 0; text-wrap: balance; }
+  h1 { font-size: clamp(1.9rem, 5vw, 2.8rem); line-height: 1.1; letter-spacing: -0.02em; }
+  h2 { font-size: 1.5rem; line-height: 1.2; letter-spacing: -0.01em; }
+  h3 { font-size: 1.05rem; line-height: 1.3; }
+  .lede { color: var(--muted); font-size: 1.1rem; max-width: 42rem; margin-top: 12px; text-wrap: pretty; }
+  .eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  section { display: flex; flex-direction: column; gap: 16px; }
+  .head { display: flex; flex-direction: column; gap: 6px; }
+  .head p { color: var(--muted); max-width: 40rem; text-wrap: pretty; }
+
+  .hero { display: flex; flex-direction: column; gap: 22px; }
+  .notice { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 14px 16px; color: var(--muted); max-width: 42rem; font-size: 0.95rem; }
+  .notice b { color: var(--alert); }
+
+  /* Who it helps */
+  .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr)); gap: 14px; }
+  .person { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .person .who { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); }
+  .person p { color: var(--muted); font-size: 0.95rem; }
+  .person ul { margin: 0; padding-left: 1.1rem; font-size: 0.95rem; display: flex; flex-direction: column; gap: 3px; }
+
+  /* Ordering flow */
+  .flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 12px; counter-reset: s; }
+  .flow li { counter-increment: s; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .flow li::before { content: counter(s); width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-size: 0.9rem; }
+  .flow b { font-size: 0.98rem; }
+  .flow span { color: var(--muted); font-size: 0.9rem; }
+
+  /* Checkpoint */
+  .progress { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .bar { display: flex; height: 14px; border-radius: 8px; overflow: hidden; background: var(--line); }
+  .bar i { display: block; height: 100%; }
+  .bar .b-done { background: var(--done); } .bar .b-demo { background: var(--demo); } .bar .b-next { background: var(--next); }
+  .counts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.95rem; }
+  .counts span { display: inline-flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .headline { font-size: 1.15rem; font-weight: 700; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: inherit; font-size: 0.92rem; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .chip:focus-visible, .toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .group { display: flex; flex-direction: column; gap: 10px; }
+  .group > h3 { font-family: var(--font-mono); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr)); gap: 12px; }
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .item .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .item p { color: var(--muted); font-size: 0.93rem; text-wrap: pretty; }
+  .item .help { color: var(--fg); }
+  .item .help b { color: var(--accent); font-weight: 700; }
+  .item .note { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); }
+  .tag { flex: none; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-weight: 500; }
+  .tag.done { background: var(--done-soft); color: var(--done); }
+  .tag.demo { background: var(--demo-soft); color: var(--demo); }
+  .tag.next { background: var(--next-soft); color: var(--next); }
+  .empty { color: var(--muted); padding: 20px; border: 1.5px dashed var(--line); border-radius: 12px; }
+
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 10px; font-size: 0.92rem; color: var(--muted); }
+  .legend div { display: flex; gap: 10px; align-items: flex-start; }
+  footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); padding-top: 16px; }
+  code { font-family: var(--font-mono); font-size: 0.85em; background: var(--accent-soft); color: var(--accent); padding: 1px 6px; border-radius: 6px; }
+  @media (prefers-reduced-motion: no-preference) { .bar i { transition: width .4s ease; } }
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div>
+      <p class="eyebrow">V1 guide and build checkpoint</p>
+      <h1>MediCare Local</h1>
+      <p class="lede">Medicines delivered locally for small towns: customers order from nearby verified pharmacies, pharmacists check prescriptions, and delivery partners bring the parcel. Doctor, lab and home-care services are planned for V2.</p>
+    </div>
+    <p class="notice"><b>For life-threatening emergencies, call 112 or 108.</b> The app has an Emergency page, but it never promises an ambulance will arrive.</p>
+  </header>
+
+  <section aria-labelledby="who-h">
+    <div class="head">
+      <p class="eyebrow">The guide</p>
+      <h2 id="who-h">Who it helps, and how</h2>
+      <p>Five roles use V1. Each gets a screen built for one job, so a first-time smartphone user can order medicine without training.</p>
+    </div>
+    <div class="people">
+      <article class="person"><span class="who">Customers and families</span><h3>Find it, order it, track it</h3>
+        <p>See which nearby pharmacies have a medicine, choose the fastest, cheapest or nearest, and follow the order to your door.</p>
+        <ul><li>Search with stock shown per pharmacy</li><li>Family profiles: "who is this for?"</li><li>Landmark-friendly addresses</li></ul></article>
+      <article class="person"><span class="who">Elderly and non-technical users</span><h3>Photo, number, done</h3>
+        <p>Send a photo of the prescription with a mobile number and area. The pharmacy calls back. No account needed.</p>
+        <ul><li>Upload Prescription &amp; Call Me</li><li>Large text, high contrast, Hindi labels</li><li>Call and WhatsApp support in the header</li></ul></article>
+      <article class="person"><span class="who">Chronic patients</span><h3>Never run out</h3>
+        <p>Save diabetes, BP or thyroid medicines once, and repeat a previous order in one tap. Prescription medicines are still checked every time.</p>
+        <ul><li>Previous orders with one-tap reorder</li><li>Saved medicines with refill dates</li><li>"Can't find your medicine?" asks nearby shops</li></ul></article>
+      <article class="person"><span class="who">Pharmacies</span><h3>Online orders, pharmacist in control</h3>
+        <p>Verify prescriptions, move each order from confirmed to ready, manage stock by CSV, and see payouts after commission.</p>
+        <ul><li>Prescription verification queue</li><li>Inventory with low-stock alerts</li><li>Customers asking for a medicine you may have</li></ul></article>
+      <article class="person"><span class="who">Delivery partners</span><h3>Accept, pick up, deliver</h3>
+        <p>Go online, accept a delivery from the list, confirm pickup with a code, and finish with the customer's code. Medicine details stay hidden.</p>
+        <ul><li>Available deliveries and one-tap accept</li><li>Navigate and call both sides</li><li>History and earnings</li></ul></article>
+      <article class="person"><span class="who">Platform admin</span><h3>Launch town by town</h3>
+        <p>Approve pharmacies and riders, switch pincodes on, generate settlements, handle complaints and watch the numbers.</p>
+        <ul><li>Verification queue with reasons</li><li>Service areas and launch sign-ups</li><li>Audit log of sensitive actions</li></ul></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="flow-h">
+    <div class="head"><h2 id="flow-h">How an order moves</h2>
+      <p>Eleven statuses, enforced in one place. Prescription orders add two review steps before the pharmacy confirms.</p></div>
+    <ol class="flow">
+      <li><b>Find it</b><span>Check your pincode, search a medicine, see stock at nearby pharmacies.</span></li>
+      <li><b>Prescription</b><span>Upload it when required. The pharmacist reviews and approves. Nothing is substituted.</span></li>
+      <li><b>Pharmacy prepares</b><span>Confirmed, preparing, then ready for pickup. Stock is reserved at confirmation.</span></li>
+      <li><b>Rider picks up</b><span>A rider accepts the delivery and collects it with the pharmacy's pickup code.</span></li>
+      <li><b>Out for delivery</b><span>Track the rider and call them. Cancel for free until pickup.</span></li>
+      <li><b>Delivered</b><span>Share the 4-digit delivery code. Cash on delivery is collected. Reorder in one tap.</span></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="cp-h">
+    <div class="head">
+      <p class="eyebrow">Checkpoint</p>
+      <h2 id="cp-h">What we have built</h2>
+      <p>Status is stated plainly. Orders, prescriptions and users are stored in MongoDB. Online payments and messages still use stand-ins until real providers are connected.</p>
+    </div>
+
+    <div class="progress" aria-live="polite">
+      <p class="headline" id="headline"></p>
+      <div class="bar" id="bar" role="img" aria-label="Progress by status"></div>
+      <div class="counts" id="counts"></div>
+    </div>
+
+    <div class="legend">
+      <div><span class="tag done">BUILT</span><span>Works end to end and is covered by tests.</span></div>
+      <div><span class="tag demo">DEMO DATA</span><span>Screens and rules work, but the provider or storage behind it is a stand-in.</span></div>
+      <div><span class="tag next">NEXT</span><span>Planned, not built yet.</span></div>
+    </div>
+
+    <div class="filters" role="group" aria-label="Filter by status" id="filters"></div>
+    <div id="list" class="head" style="gap:26px"></div>
+  </section>
+
+  <footer>Verified: 74 automated tests, 79 end-to-end checks, clean typecheck, lint and production build. Run with <code>npm run db:up</code> then <code>npm run dev</code>; <code>npm run db:reset</code> reloads the demo data. Legal and regulatory compliance still needs review by qualified professionals before launch.</footer>
+</div>
+
+<script>
+  var D = "done", M = "demo", N = "next";
+  var DATA = [
+    { g: "Customer app", items: [
+      ["Location and service-area check", D, "Enter a pincode. Outside active areas it says \"We're coming to your area\" and saves your mobile number.", "People know at once whether delivery reaches them."],
+      ["Medicine search and filters", D, "Search by name, generic, brand or category. Filter by nearby, prescription, price and brand.", "Find the right medicine even when you only know the generic name."],
+      ["Stock at nearby pharmacies", D, "Availability is per pharmacy. Each result shows how many shops have it, the closest, the fastest and the lowest price.", "No more calling shop to shop."],
+      ["Fastest, Cheapest, Nearest", D, "Choose how to pick the pharmacy, or stay with your preferred one. Results re-sort to match.", "Speed or savings in one tap."],
+      ["Find This Medicine For Me", D, "Nearby pharmacies reply: available, alternative, out of stock or restock time. You are notified when found.", "Hard-to-find medicines get found without a trip."],
+      ["Prescription upload", D, "Camera, gallery or PDF. Photos are shrunk first and checked by real file content.", "Works on slow networks and budget phones."],
+      ["Upload Prescription and Call Me", D, "Mobile, area and a photo, with no account. The pharmacy sees it and calls back.", "Elderly users get help without learning the app."],
+      ["Cart saved on the server", D, "Your cart follows you across phones. Prices are always re-read from the pharmacy's stock.", "Start on one phone, finish on another."],
+      ["Checkout with landmark addresses", D, "Village, mohalla, landmark and house description are first-class fields. Map pin is optional.", "Riders find homes that have no street address."],
+      ["Normal and Priority delivery", D, "Time shown as a range with the reasons: pharmacy prep, prescription check, rider, distance.", "No false 10-minute promises."],
+      ["Cash on delivery", D, "The rider collects cash and the order is marked paid on delivery.", "Many families still prefer paying in cash."],
+      ["UPI and card payment", M, "The flow works end to end through a payment-provider layer, but the gateway is a demo.", "Needs a real provider such as Razorpay before launch."],
+      ["Order tracking", D, "Eleven-step timeline, rider name and call button, estimated arrival. The page refreshes every 10 seconds.", "Know where the order is and who is bringing it."],
+      ["Delivery OTP", D, "The customer sees a 4-digit code only while the rider is on the way, and shares it at the door.", "Medicines reach only the right person."],
+      ["Cancel, refund, invoice, review", D, "Free cancel until pickup, automatic refund for paid orders, printable receipt, reviews after delivery.", "Clear rules build trust."],
+      ["Previous orders and one-tap reorder", D, "Repeat any past order with the same items, pharmacy and address. Prescription items go back to review.", "Regular medicines in seconds."],
+      ["Saved medicines and refills", D, "Save lists per family member with a refill date and reminder switch. A reminder job function is ready.", "Fewer missed refills."],
+      ["Family profiles", D, "Self, parents, children, grandparents with age, allergies and current medicines.", "One phone manages the whole family."],
+      ["Support entry points", D, "Call and WhatsApp in the header, plus a message form that creates a complaint.", "A human is always one tap away."],
+      ["Large text, high contrast, Hindi", D, "One switch for bigger text and stronger contrast. Core screens are in Hindi.", "Readable for elderly and Hindi-first users."],
+      ["Works on slow internet", D, "Small pages, skeleton loading, retry buttons, offline page, installable app.", "Smooth on budget Android phones."]
+    ]},
+    { g: "Pharmacy dashboard", items: [
+      ["Registration and licence check", D, "Drug licence, GSTIN and service pincodes. The shop stays pending until the platform verifies it.", "Only licensed shops can sell."],
+      ["Orders workflow", D, "Accept and confirm, start preparing, mark ready, reject with a reason, or assign the nearest rider.", "Every order moves forward in one tap."],
+      ["Prescription verification", D, "Open the prescription, approve, ask for a clearer copy, or reject with a reason. Items are never changed.", "The pharmacist stays in control of every prescription."],
+      ["Medicine requests", D, "See what nearby customers are looking for and reply.", "Turn unmet demand into sales."],
+      ["Inventory and CSV upload", D, "Quick stock edits, low-stock and expiry flags, bulk CSV with row-by-row errors.", "Update hundreds of items in minutes."],
+      ["Customers", D, "People who ordered, with order counts and spend. Phone numbers are masked.", "Know your regulars without exposing their data."],
+      ["Payments and settlements", D, "Paid, cash still to collect, refunds, and payouts after commission.", "See exactly what you are owed."],
+      ["Reports", D, "Seven-day revenue and orders, top medicines, cancellation rate, repeat share.", "Spot what sells and what goes wrong."],
+      ["Store settings", D, "Hours, delivery pincodes, radius, priority delivery, accepting orders.", "Control when and where you deliver."],
+      ["Billing / POS integration", N, "The CSV endpoint is ready; direct integrations are not built.", "Stock would sync from shop software."]
+    ]},
+    { g: "Rider app", items: [
+      ["Online and offline", D, "One switch. Riders must be verified, and cannot go offline while carrying a delivery.", "Riders control their working time."],
+      ["Available deliveries and accept", D, "Ready orders appear with pickup shop, distance, payout and drop area. First valid accept wins; up to 3 at once.", "Fair, fast assignment without phone calls."],
+      ["Pickup with navigation and OTP", D, "Call and navigate to the pharmacy, then confirm with the pharmacy's code.", "Right parcel to the right rider."],
+      ["Customer navigation and call", D, "Address, landmark, call and map buttons appear only after accepting.", "Fewer wrong turns and missed handovers."],
+      ["Delivery OTP and cash", D, "Complete with the customer's code. Cash-on-delivery amount is shown.", "Handover is proven."],
+      ["History and earnings", D, "Completed deliveries, today, last 7 days and all-time earnings with a chart.", "Riders see what they earned."],
+      ["Medical details hidden", D, "No medicine names, prescriptions or patient details, ever.", "Protects patient privacy."],
+      ["Live rider location on a map", N, "Customers see status steps, not a moving dot.", "Would show the rider approaching."]
+    ]},
+    { g: "Admin dashboard", items: [
+      ["Dashboard", D, "Orders today, live orders, GMV, customers, pharmacies, riders online, approvals, complaints.", "Run the platform at a glance."],
+      ["Customers, Orders, Requests, Payments", D, "Searchable tables. OTPs, file keys and medical content are never shown.", "Support without seeing private data."],
+      ["Pharmacies and Pharmacy Verification", D, "Verify or reject with a reason, suspend or reactivate. Suspending stops orders instantly.", "Only checked partners stay live."],
+      ["Riders", D, "Verification, online status, deliveries and earnings per rider.", "Know who is on the road."],
+      ["Service areas", D, "Switch pincodes, districts or states on. See how many people are waiting for launch.", "Expand one town at a time."],
+      ["Settlements", D, "Generate pharmacy settlements with commission for delivered orders, then move them to processing and paid.", "Pay partners correctly and once."],
+      ["Complaints", D, "Customer messages with order links. Start and resolve.", "Problems get an owner."],
+      ["Reports and Settings", D, "Seven-day orders and GMV, top pharmacies and medicines, cancellation reasons. Edit commission, fees and rider payouts.", "Tune the business without code changes."],
+      ["Audit log", D, "Verification, prescription review, order decisions, settlements and settings changes.", "Accountability for sensitive actions."]
+    ]},
+    { g: "Foundations", items: [
+      ["Order state machine", D, "Eleven statuses with allowed moves per role. Stock reserve and release, refunds and rider release are automatic.", "No order can skip a safety step."],
+      ["Five roles with permissions", D, "Customer, pharmacy admin, pharmacist, delivery partner, super admin. Checked on every page and API call.", "People only see what their job needs."],
+      ["MongoDB storage", D, "Data is loaded from MongoDB at start and written back after each change. It survives restarts. One server instance for now.", "Real data that stays."],
+      ["Schemas and indexes", D, "Models for orders, inventory, prescriptions and more, with indexes for search, availability, status and dates.", "Fast lookups as data grows."],
+      ["Private prescription files", D, "Short-lived signed links tied to the user, never cached, no medical data in URLs.", "Prescriptions cannot leak by link."],
+      ["Automated checks", D, "74 tests and 79 end-to-end checks, plus clean typecheck, lint and production build.", "Safety rules keep working as the app grows."]
+    ]},
+    { g: "Still to do", items: [
+      ["Real payment gateway", N, "Replace the demo gateway, add webhooks, refunds and reconciliation.", "Money actually moves."],
+      ["SMS, WhatsApp, push, email", N, "Events are mapped but providers only log. A scheduler must run the refill reminders.", "Customers get real messages."],
+      ["Cloud file storage", N, "Prescription files are stored in MongoDB for now.", "Encrypted, durable prescription storage."],
+      ["Multi-server scaling", N, "Needs repositories that read and write MongoDB directly instead of the in-memory working set.", "Run several servers safely."],
+      ["Staff-placed orders for Call Me", N, "Pharmacies can verify the prescription and call, but cannot create the order for that customer yet.", "Completes the no-app path."],
+      ["SMS login, CSRF, lockout", N, "Password login only for now.", "Easier and safer sign-in."],
+      ["Full Hindi", N, "Core screens are translated; many are English.", "Every screen in the user's language."],
+      ["Legal and pharmacy review", N, "Drug rules, DPDP privacy and e-commerce rules need qualified review.", "Required before real patients use it."],
+      ["Doctors, labs, home care, emergency (V2)", N, "Deliberately left out of V1. A backup of the earlier prototype exists.", "Next product phase."]
+    ]}
+  ];
+
+  var LABEL = { done: "BUILT", demo: "DEMO DATA", next: "NEXT" };
+  var state = "all";
+  var all = [];
+  DATA.forEach(function (g) { g.items.forEach(function (i) { all.push(i[1]); }); });
+  var total = all.length;
+  var count = { done: 0, demo: 0, next: 0 };
+  all.forEach(function (s) { count[s]++; });
+
+  document.getElementById("headline").textContent = count.done + " of " + total + " features are fully built and tested";
+  document.getElementById("bar").innerHTML =
+    ["done", "demo", "next"].map(function (k) { return '<i class="b-' + k + '" style="width:' + (count[k] / total * 100) + '%"></i>'; }).join("");
+  document.getElementById("counts").innerHTML =
+    '<span><i class="dot" style="background:var(--done)"></i>' + count.done + ' built</span>' +
+    '<span><i class="dot" style="background:var(--demo)"></i>' + count.demo + ' on demo data</span>' +
+    '<span><i class="dot" style="background:var(--next)"></i>' + count.next + ' still to do</span>';
+
+  var filters = [["all", "All (" + total + ")"], ["done", "Built (" + count.done + ")"], ["demo", "Demo data (" + count.demo + ")"], ["next", "To do (" + count.next + ")"]];
+  var fEl = document.getElementById("filters");
+  fEl.innerHTML = filters.map(function (f) { return '<button type="button" class="chip" data-s="' + f[0] + '" aria-pressed="' + (f[0] === state) + '">' + f[1] + '</button>'; }).join("");
+  fEl.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state = b.dataset.s;
+    fEl.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", String(x.dataset.s === state)); });
+    render();
+  });
+
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function render() {
+    var html = "";
+    DATA.forEach(function (g) {
+      var rows = g.items.filter(function (i) { return state === "all" || i[1] === state; });
+      if (!rows.length) return;
+      html += '<div class="group"><h3><span>' + esc(g.g) + '</span><span>' + rows.length + '</span></h3><div class="items">' +
+        rows.map(function (i) {
+          return '<article class="item"><div class="top"><h3>' + esc(i[0]) + '</h3><span class="tag ' + i[1] + '">' + LABEL[i[1]] + '</span></div>' +
+            '<p>' + esc(i[2]) + '</p><p class="help"><b>Why it helps:</b> ' + esc(i[3]) + '</p></article>';
+        }).join("") + '</div></div>';
+    });
+    document.getElementById("list").innerHTML = html || '<p class="empty">Nothing in this group.</p>';
+  }
+  render();
+</script>

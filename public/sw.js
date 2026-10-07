@@ -1,4 +1,4 @@
-/* MediCare Local service worker (v2) – small and conservative.
+/* DawaDost service worker (v2) – small and conservative.
  *  - Precaches the offline page and icons so the app always opens, even with no signal.
  *  - /_next/static and /icons: cache-first (content-hashed, immutable).
  *  - Page navigations: network-first; on failure show the cached offline page.
@@ -8,7 +8,7 @@
 const VERSION = "v2";
 const STATIC = `mc-static-${VERSION}`;
 const OFFLINE = `mc-offline-${VERSION}`;
-const PRECACHE = ["/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/rider-192.png"];
+const PRECACHE = ["/offline.html", "/favicon.svg", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/rider-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

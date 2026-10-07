@@ -61,13 +61,13 @@ export function LocationPicker({ variant = "header" }: { variant?: "header" | "b
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className={variant === "header"
-          ? "flex min-h-12 max-w-[60vw] items-center gap-2 rounded-2xl px-2 py-1 text-left hover:bg-brand-50 sm:max-w-none"
+          ? "flex min-h-12 max-w-[40vw] items-center gap-2 rounded-2xl px-2 py-1 text-left hover:bg-brand-50 min-[420px]:max-w-[50vw] sm:max-w-none"
           : "flex min-h-12 items-center gap-2 rounded-2xl border-2 border-line bg-white px-4 py-2 text-left"}
       >
         <MapPin className="size-5 shrink-0 text-brand-600" aria-hidden />
         <span className="min-w-0">
           <span className="block text-xs text-muted">{t("deliveringTo")}</span>
-          <span className="block truncate text-sm font-bold">{areaLabel ? `${areaLabel} · ` : ""}{pincode}</span>
+          <span className="block truncate text-sm font-bold">{areaLabel && <span className="hidden min-[420px]:inline">{areaLabel} · </span>}{pincode}</span>
         </span>
         <ChevronDown className="size-4 shrink-0" aria-hidden />
       </button>

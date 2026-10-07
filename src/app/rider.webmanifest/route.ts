@@ -2,8 +2,8 @@
 export function GET() {
   const manifest = {
     id: "/delivery",
-    name: "MediCare Rider",
-    short_name: "Rider",
+    name: "DawaDost Rider",
+    short_name: "DD Rider",
     description: "Accept and complete medicine deliveries.",
     lang: "en-IN",
     start_url: "/delivery?source=pwa",

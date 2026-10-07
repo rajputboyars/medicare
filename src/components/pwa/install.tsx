@@ -33,7 +33,7 @@ export function useInstall() {
 }
 
 /** Card shown where installing makes sense (profile, rider home). Hidden once installed or when not possible. */
-export function InstallCard({ appName = "MediCare Local", storageKey = "mc-install-dismissed" }: { appName?: string; storageKey?: string }) {
+export function InstallCard({ appName = "DawaDost", storageKey = "mc-install-dismissed" }: { appName?: string; storageKey?: string }) {
   const { installed, canPrompt, showIosHint, install } = useInstall();
   const [dismissed, setDismissed] = useState(true);
   useEffect(() => { try { setDismissed(localStorage.getItem(storageKey) === "1"); } catch { setDismissed(false); } }, [storageKey]);

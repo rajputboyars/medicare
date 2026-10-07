@@ -48,7 +48,7 @@ export default function RegisterPage() {
           <div>
             <label className="flex items-start gap-3 text-sm">
               <input type="checkbox" className="mt-1 size-6 shrink-0 accent-brand-600" {...register("consentHealthData")} />
-              <span>I agree that MediCare Local may process my health information (prescriptions, orders) to fulfil my requests, and share only what is needed with the pharmacy. I can withdraw this anytime in Profile → Privacy.</span>
+              <span>I agree that DawaDost may process my health information (prescriptions, orders) to fulfil my requests, and share only what is needed with the pharmacy. I can withdraw this anytime in Profile → Privacy.</span>
             </label>
             {errors.consentHealthData && <p role="alert" className="mt-1 text-sm font-medium text-emergency">{errors.consentHealthData.message}</p>}
           </div>

@@ -483,6 +483,7 @@ describe("admin", () => {
   it("tables never leak OTPs, file keys or prescription contents", () => {
     const json = JSON.stringify([adminList("orders"), adminList("customers"), adminList("requests"), adminList("complaints")]);
     expect(json).not.toMatch(/deliveryOtp|pickupOtp|fileKey|passwordHash/);
+    otc(); // an order placed right now always counts as "today" (seeded orders can fall on yesterday just after midnight)
     expect(adminStats().ordersToday).toBeGreaterThan(0);
     expect(platformReports().days).toHaveLength(7);
   });

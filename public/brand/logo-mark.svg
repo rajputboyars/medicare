@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DawaDost">
+  <title>DawaDost</title>
+  <rect width="64" height="64" rx="14" fill="#0f766e"/>
+  <ellipse cx="32" cy="58.4" rx="8.5" ry="2" fill="#f59e0b"/>
+  <path d="M32 8.5c-10.7 0-18.8 8.1-18.8 18.5 0 12.7 13.9 25 17.8 28.5a1.5 1.5 0 0 0 2 0c3.9-3.5 17.8-15.8 17.8-28.5C50.8 16.6 42.7 8.5 32 8.5z" fill="#fff"/>
+  <path d="M28.6 18.2h6.8v6.9h6.9v6.8h-6.9v6.9h-6.8v-6.9h-6.9v-6.8h6.9z" fill="#0f766e"/>
+</svg>

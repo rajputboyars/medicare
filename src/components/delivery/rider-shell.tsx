@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { post } from "@/lib/api";
 import { useRiderMe, useToggleOnline } from "@/components/delivery/rider-context";
 import { InstallCard } from "@/components/pwa/install";
+import { LogoMark } from "@/components/brand/logo";
 
 const TABS = [
   { href: "/delivery", label: "Deliveries", icon: Bike, exact: true },
@@ -26,7 +27,7 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto min-h-dvh max-w-lg">
       <header className="sticky top-0 z-20 border-b border-line bg-white px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0"><p className="whitespace-nowrap text-base font-extrabold text-brand-700">MediCare Rider</p><p className="truncate text-sm text-muted">{me.data?.name ?? "…"}</p></div>
+          <div className="flex min-w-0 items-center gap-2.5"><LogoMark className="size-10" /><div className="min-w-0"><p className="whitespace-nowrap text-base font-extrabold leading-tight"><span className="text-ink">Dawa</span><span className="text-brand-600">Dost</span></p><p className="truncate text-sm text-muted">Rider · {me.data?.name ?? "…"}</p></div></div>
           <div className="flex items-center gap-2">
             <button role="switch" aria-checked={online} aria-label={online ? "You are online. Tap to go offline" : "You are offline. Tap to go online"} disabled={!me.data || toggle.isPending} onClick={() => toggle.mutate(!online)}
               className={clsx("flex min-h-12 items-center gap-2 rounded-full border-2 px-3 text-sm font-extrabold disabled:opacity-60", online ? "border-green-600 bg-ok-50 text-ok" : "border-line bg-stone-100 text-muted")}>
@@ -40,7 +41,7 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
         {me.data && me.data.verification !== "VERIFIED" && <p className="mt-2 rounded-xl bg-warn-50 p-2 text-sm text-warn">Your account is waiting for verification. You can accept deliveries once approved.</p>}
       </header>
       <main id="main" className="px-3 pb-28 pt-4">
-        <div className="mb-4 empty:hidden"><InstallCard appName="MediCare Rider" storageKey="mc-rider-install-dismissed" /></div>
+        <div className="mb-4 empty:hidden"><InstallCard appName="DawaDost Rider" storageKey="mc-rider-install-dismissed" /></div>
         {children}
       </main>
       <nav aria-label="Rider" className="safe-bottom fixed inset-x-0 bottom-0 z-20 mx-auto max-w-lg border-t border-line bg-white">

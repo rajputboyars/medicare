@@ -26,7 +26,7 @@ export const registerSchema = z.object({
     .regex(/[A-Za-z]/, "Include a letter")
     .regex(/\d/, "Include a number"),
   consentHealthData: z.literal(true, { error: "Consent is needed to process your health information" }),
-});
+}).strict(); // a signup can never choose its own role
 
 export const addressSchema = z.object({
   label: z.string().trim().min(1).max(30).default("Home"),
@@ -54,17 +54,21 @@ export const familyMemberSchema = z.object({
   preferredPharmacyId: z.string().optional(),
 });
 
+/**
+ * Strict on purpose: the body may only carry CHOICES. A request that also tries to send a price, total, status, payment
+ * status or role is refused outright instead of being silently ignored.
+ */
 export const createOrderSchema = z.object({
   pharmacyId: z.string().min(1),
   addressId: z.string().min(1),
   familyMemberId: z.string().optional(),
-  items: z.array(z.object({ medicineId: z.string().min(1), quantity: z.number().int().min(1).max(20) })).min(1).max(40),
+  items: z.array(z.object({ medicineId: z.string().min(1), quantity: z.number().int().min(1).max(20) }).strict()).min(1).max(40),
   prescriptionId: z.string().optional(),
   deliveryType: z.enum(["NORMAL", "PRIORITY"]).default("NORMAL"),
   paymentMethod: z.enum(["UPI", "COD", "CARD", "WALLET"]),
   offerCode: z.string().optional(),
   isRepeat: z.boolean().optional(),
-});
+}).strict();
 
 export const quickOrderSchema = z.object({
   mobile: mobileSchema,

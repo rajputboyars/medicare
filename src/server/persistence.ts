@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import mongoose, { type ClientSession } from "mongoose";
 import * as M from "@/models";
 import type { AnyModel } from "@/models";
 import { connectMongo } from "./mongo";
@@ -154,10 +155,15 @@ function markClean(d: Db) {
   }
 }
 
-async function flushNow(): Promise<{ written: number; deleted: number }> {
+/**
+ * Writes every changed document. The diff is computed first and only recorded as "stored" after the writes succeed,
+ * so a failed flush is simply retried with the next request.
+ */
+async function writeChanges(session?: ClientSession): Promise<{ written: number; deleted: number; next: Map<string, Map<string, string>> }> {
   const d = db();
   let written = 0;
   let deleted = 0;
+  const nextSnapshot = new Map<string, Map<string, string>>();
   for (const s of SINKS) {
     const prev = state.snapshot.get(s.name) ?? new Map<string, string>();
     const next = new Map<string, string>();
@@ -172,10 +178,32 @@ async function flushNow(): Promise<{ written: number; deleted: number }> {
     }
     const gone = [...prev.keys()].filter((k) => !next.has(k));
     if (gone.length) { ops.push({ deleteMany: { filter: { _id: { $in: gone } } } }); deleted += gone.length; }
-    if (ops.length) await s.model.bulkWrite(ops as never, { ordered: false });
-    state.snapshot.set(s.name, next);
+    if (ops.length) await s.model.bulkWrite(ops as never, { ordered: false, session });
+    nextSnapshot.set(s.name, next);
   }
-  return { written, deleted };
+  return { written, deleted, next: nextSnapshot };
+}
+
+/**
+ * With MONGO_TRANSACTIONS=true (needs a replica set, e.g. Atlas or a one-node rs) the whole request is written in ONE
+ * MongoDB transaction: either the order, its stock reservation, its payment and its history are all stored, or none are.
+ * Without it (a plain standalone mongod, the local default) the same writes happen per collection.
+ */
+async function flushNow(): Promise<{ written: number; deleted: number }> {
+  let out: Awaited<ReturnType<typeof writeChanges>>;
+  if (process.env.MONGO_TRANSACTIONS === "true") {
+    const session = await mongoose.startSession();
+    try {
+      out = await session.withTransaction(() => writeChanges(session)) as unknown as Awaited<ReturnType<typeof writeChanges>>;
+      // withTransaction returns the callback result on success
+    } finally {
+      await session.endSession();
+    }
+  } else {
+    out = await writeChanges();
+  }
+  for (const [name, snap] of out.next) state.snapshot.set(name, snap);
+  return { written: out.written, deleted: out.deleted };
 }
 
 /** Serialised so overlapping requests cannot interleave writes. Never throws into the request path. */

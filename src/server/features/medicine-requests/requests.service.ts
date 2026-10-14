@@ -22,11 +22,11 @@ export function createMedicineRequest(input: MedicineRequestInput, userId?: stri
   const cover = coverageFor(input.pincode);
   const targets = d.pharmacies.filter((p) => p.verification === "VERIFIED" && p.acceptingOrders && p.servicePincodes.includes(input.pincode));
   if (!targets.length || (cover.status !== "ACTIVE" && cover.status !== "UNKNOWN")) throw badRequest("We're coming to your area. No partner pharmacy covers this pincode yet.");
+  if (input.prescriptionId && !d.prescriptions.some((p) => p.id === input.prescriptionId && p.userId === userId)) throw badRequest("Prescription not found");
+  if (input.familyMemberId && !d.familyMembers.some((f) => f.id === input.familyMemberId && f.userId === userId)) throw badRequest("Unknown family member");
   const dup = d.medicineRequests.find((r) => r.status === "SEARCHING" && r.mobile === input.mobile && r.medicineQuery.toLowerCase() === input.medicineQuery.toLowerCase());
   const asked = targets.map((p) => ({ id: p.id, name: p.name }));
   if (dup) return { ...dup, pharmaciesNotified: targets.length, asked, responses: requestResponses(dup.id) };
-  if (input.prescriptionId && !d.prescriptions.some((p) => p.id === input.prescriptionId && p.userId === userId)) throw badRequest("Prescription not found");
-  if (input.familyMemberId && !d.familyMembers.some((f) => f.id === input.familyMemberId && f.userId === userId)) throw badRequest("Unknown family member");
   const name = input.medicineQuery.trim().toLowerCase();
   const r: MedicineRequest = {
     id: uid("req"), userId: userId ?? `guest:${input.mobile}`, medicineQuery: input.medicineQuery, strength: input.strength || undefined, quantity: input.quantity ?? 1,

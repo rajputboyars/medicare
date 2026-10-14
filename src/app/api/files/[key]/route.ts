@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { verifyFileSignature } from "@/lib/signed-url";
+import { failure } from "@/server/core/response";
+import { forbidden, notFound } from "@/server/errors";
 import { currentUser } from "@/server/http";
-import { canAccessPrescription } from "@/server/services/prescriptions";
+import { canAccessPrescription } from "@/server/features/prescriptions/prescriptions.service";
 import { db } from "@/server/store";
 
 /**
@@ -14,12 +16,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ key: string }> 
   const user = await currentUser();
   const uid = sp.get("uid") ?? "";
   if (!user || user.id !== uid || !verifyFileSignature(key, Number(sp.get("exp")), uid, sp.get("sig") ?? "")) {
-    return NextResponse.json({ error: "This link is not valid or has expired" }, { status: 403 });
+    return failure(forbidden("This link is not valid or has expired"));
   }
   const d = db();
   const file = d.files.get(key);
   const rx = d.prescriptions.find((p) => p.fileKey === key);
-  if (!file || !rx || !canAccessPrescription(user, rx)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!file || !rx || !canAccessPrescription(user, rx)) return failure(notFound("Not found"));
   return new NextResponse(Buffer.from(file.bytes), {
     headers: {
       "Content-Type": file.mimeType,

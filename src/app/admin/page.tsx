@@ -1,39 +1,35 @@
 "use client";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { Bike, ClipboardList, IndianRupee, ShieldCheck, Store, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { inr } from "@/lib/pricing";
-import { Card, PageTitle, QueryBoundary, SkeletonList, Stat } from "@/components/ui";
-
-interface S {
-  ordersToday: number; gmv: number; customers: number; activePharmacies: number; pendingPharmacyApprovals: number; ridersOnline: number; ridersVerified: number;
-  pendingRiderApprovals: number; deliveries: number; cancelledOrders: number; liveOrders: number; openRequests: number; openTickets: number; pendingSettlements: number;
-}
+import { DashboardMetricCard, OperationalAlert, PageTitle, QueryBoundary, SectionHeader, SkeletonMetric, Success } from "@/components/ui";
+import type { AdminStats } from "./layout";
 
 export default function AdminHome() {
-  const q = useQuery({ queryKey: ["admin-stats"], queryFn: () => api<S>("/api/admin/stats"), refetchInterval: 30_000 });
+  const q = useQuery({ queryKey: ["admin-stats"], queryFn: () => api<AdminStats>("/api/admin/stats"), refetchInterval: 30_000 });
   return (
     <>
-      <PageTitle title="Platform dashboard" subtitle="Live overview of orders, partners and approvals." />
-      <QueryBoundary query={q} skeleton={<SkeletonList rows={3} height="h-24" />}>
+      <PageTitle title="Dashboard" subtitle="What is happening on DawaDost right now." />
+      <QueryBoundary query={q} skeleton={<div className="grid grid-cols-2 gap-3 xl:grid-cols-3"><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /></div>}>
         {(s) => (
           <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Link href="/admin/orders"><Stat label="Orders today" value={s.ordersToday} /></Link>
-              <Link href="/admin/orders"><Stat label="Live orders now" value={s.liveOrders} /></Link>
-              <Link href="/admin/payments"><Stat label="GMV (excl. cancelled)" value={inr(s.gmv)} /></Link>
-              <Link href="/admin/customers"><Stat label="Customers" value={s.customers} /></Link>
-              <Link href="/admin/pharmacies"><Stat label="Active pharmacies" value={s.activePharmacies} /></Link>
-              <Link href="/admin/verification"><Stat label="Pharmacy approvals pending" value={s.pendingPharmacyApprovals} tone={s.pendingPharmacyApprovals ? "warn" : undefined} /></Link>
-              <Link href="/admin/riders"><Stat label="Riders online" value={`${s.ridersOnline} / ${s.ridersVerified}`} /></Link>
-              <Link href="/admin/verification"><Stat label="Rider approvals pending" value={s.pendingRiderApprovals} tone={s.pendingRiderApprovals ? "warn" : undefined} /></Link>
-              <Stat label="Deliveries completed" value={s.deliveries} />
-              <Stat label="Cancelled orders" value={s.cancelledOrders} />
-              <Link href="/admin/requests"><Stat label="Open medicine requests" value={s.openRequests} tone={s.openRequests ? "warn" : undefined} /></Link>
-              <Link href="/admin/complaints"><Stat label="Open complaints" value={s.openTickets} tone={s.openTickets ? "warn" : undefined} /></Link>
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+              <DashboardMetricCard href="/admin/orders" icon={<ClipboardList />} label="Orders today" value={s.ordersToday} hint={`${s.liveOrders} in progress now`} />
+              <DashboardMetricCard href="/admin/payments" icon={<IndianRupee />} label="GMV (not cancelled)" value={inr(s.gmv)} hint={`${s.deliveries} delivered`} />
+              <DashboardMetricCard href="/admin/customers" icon={<Users />} label="Customers" value={s.customers} />
+              <DashboardMetricCard href="/admin/pharmacies" icon={<Store />} label="Pharmacies" value={s.activePharmacies} hint="Verified and active" />
+              <DashboardMetricCard href="/admin/riders" icon={<Bike />} label="Delivery partners" value={`${s.ridersOnline} / ${s.ridersVerified}`} hint="Online / verified" />
+              <DashboardMetricCard href="/admin/verification" icon={<ShieldCheck />} label="Pending approvals" value={s.pendingApprovals} tone={s.pendingApprovals ? "attention" : "neutral"} hint={s.pendingApprovals ? "Pharmacies and delivery partners" : "Nothing waiting"} />
             </div>
-            <Card className="mt-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-extrabold">Settlements</h2><p className="text-muted">{s.pendingSettlements} settlement(s) waiting to be processed or paid.</p></div>
-              <Link href="/admin/settlements" className="inline-flex min-h-12 items-center rounded-2xl bg-brand-600 px-5 font-semibold text-white">Open settlements</Link></Card>
+
+            <section aria-labelledby="att" className="mt-8"><SectionHeader id="att" title="Attention required" />
+              {s.attention.length === 0 ? <Success title="All clear">Nothing needs your attention right now.</Success> : (
+                <ul className="space-y-3">{s.attention.map((a) => (
+                  <li key={a.id}><OperationalAlert severity={a.severity} title={a.title} description={a.description} action={{ label: a.actionLabel, href: a.href }} /></li>
+                ))}</ul>
+              )}
+            </section>
           </>
         )}
       </QueryBoundary>

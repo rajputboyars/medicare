@@ -15,7 +15,7 @@ async function login(identifier) {
 const call = async (cookie, method, path, body) => {
   const r = await fetch(base + path, { method, redirect: "manual", headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
-  return { status: r.status, ...j };
+  return { status: r.status, ...j, error: j.message };
 };
 const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000001e221bc330000000049454e44ae426082", "hex");
 
@@ -58,7 +58,7 @@ ok("Find This Medicine For Me creates a request", fm.status === 200 && fm.data?.
 const preq = await call(owner.cookie, "GET", "/api/pharmacy/requests");
 const mine = preq.data?.find((r) => r.id === fm.data.id);
 ok("pharmacy sees the request", !!mine);
-ok("pharmacy replies available → customer notified", (await call(owner.cookie, "POST", `/api/pharmacy/requests/${fm.data.id}`, { response: "AVAILABLE" })).data?.status === "FOUND");
+ok("pharmacy replies available → customer notified", (await call(owner.cookie, "POST", `/api/pharmacy/requests/${fm.data.id}`, { response: "AVAILABLE", price: 120, availableQty: 5, prepMinutes: 15 })).data?.status === "FOUND");
 const my = await call(customer2.cookie, "GET", "/api/medicine-requests");
 ok("customer sees the replies (seeded out-of-stock + new available)", my.data?.find((r) => r.id === fm.data.id)?.responses?.some((x) => x.response === "AVAILABLE" && x.pharmacyName));
 
@@ -72,7 +72,7 @@ ok("Rx medicine without prescription is refused", noRx.status === 400, noRx.erro
 
 // ── OTC order, full state machine over HTTP ──
 const placed = await call(customer.cookie, "POST", "/api/orders", { pharmacyId: "ph_1", addressId: "ad_1", items: [{ medicineId: "med_7", quantity: 2 }], paymentMethod: "COD", deliveryType: "NORMAL" });
-ok("order placed → PENDING", placed.status === 200 && placed.data?.status === "PENDING", placed.error);
+ok("order placed → PENDING", placed.status === 201 && placed.data?.status === "PENDING", placed.error);
 const id = placed.data.id;
 ok("placing the order clears the server cart", (await call(customer.cookie, "GET", "/api/cart")).data?.lines?.length === 0);
 ok("customer has no delivery OTP yet", placed.data.deliveryOtp === undefined);
@@ -137,8 +137,9 @@ ok("pharmacy can open the prescription", (await fetch(base + (await call(pharmac
 ok("reject without a reason refused", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "review", decision: "REJECT" })).status === 400);
 ok("clarification request keeps order in review", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "review", decision: "CLARIFY", note: "Signature is cut off" })).data?.status === "PRESCRIPTION_REVIEW");
 ok("approve → PRESCRIPTION_APPROVED", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "review", decision: "APPROVE" })).data?.status === "PRESCRIPTION_APPROVED");
-ok("confirm → CONFIRMED", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "step", step: "confirm" })).data?.status === "CONFIRMED");
+ok("an unpaid online order cannot be confirmed", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}/preparing`)).status === 409 && (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "step", step: "confirm" })).status === 409);
 ok("UPI payment captured", (await call(customer.cookie, "POST", `/api/orders/${rx.data.id}`, { action: "pay", providerRef: "demo_123" })).data?.paymentStatus === "PAID");
+ok("confirm → CONFIRMED", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "step", step: "confirm" })).data?.status === "CONFIRMED");
 ok("customer cancels before pickup → refunded", (await call(customer.cookie, "POST", `/api/orders/${rx.data.id}`, { action: "cancel", reason: "Changed my mind" })).data?.paymentStatus === "REFUNDED");
 
 // ── Admin ──
@@ -165,5 +166,18 @@ for (let i = 0; i < 12; i++) {
 }
 ok("login brute force is rate limited", limited);
 
+// ── Backend contract: envelope, pagination, spec routes, tampering ──
+{
+  const list = await call(customer.cookie, "GET", "/api/orders?limit=2&sort=createdAt:desc");
+  ok("envelope: success/data/message/errors/meta", list.success === true && Array.isArray(list.data) && list.meta?.limit === 2 && "message" in list && "errors" in list);
+  ok("pagination: bad sort refused", (await call(customer.cookie, "GET", "/api/orders?sort=passwordHash:asc")).status === 400);
+  ok("error envelope", await call(null, "GET", "/api/orders").then((r) => r.status === 401 && r.success === false && r.errors?.[0]?.code === "UNAUTHENTICATED"));
+  const tamper = await call(customer.cookie, "POST", "/api/orders", { pharmacyId: "ph_1", addressId: "ad_1", deliveryType: "NORMAL", paymentMethod: "COD", items: [{ medicineId: "med_7", quantity: 1 }], total: 1, status: "CONFIRMED", paymentStatus: "PAID" });
+  ok("price / status / payment tampering refused", tamper.status === 400);
+  ok("admin dashboard + lists", (await call(admin.cookie, "GET", "/api/admin/dashboard")).status === 200 && (await call(admin.cookie, "GET", "/api/admin/users?role=CUSTOMER&limit=3")).meta?.limit === 3 && (await call(admin.cookie, "GET", "/api/admin/riders")).status === 200 && (await call(admin.cookie, "GET", "/api/admin/pharmacies")).status === 200 && (await call(admin.cookie, "GET", "/api/admin/orders")).status === 200);
+  ok("pharmacy medicine requests list", (await call(owner.cookie, "GET", "/api/pharmacy/medicine-requests")).status === 200);
+  ok("rider available route", (await call(rider.cookie, "GET", "/api/rider/deliveries/available")).status === 200);
+  ok("customer blocked from admin + pharmacy + rider routes", [(await call(customer.cookie, "GET", "/api/admin/dashboard")).status, (await call(customer.cookie, "GET", "/api/pharmacy/orders")).status, (await call(customer.cookie, "GET", "/api/rider/deliveries/available")).status].every((x) => x === 403));
+}
 console.log(failures ? `\n${failures} FAILED` : "\nAll smoke checks passed");
 process.exit(failures ? 1 : 0);

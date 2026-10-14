@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { advanceAsPharmacy, assignRider, rejectOrder, reviewOrderPrescription } from "@/server/services/orders";
+import { advanceAsPharmacy, assignRider, rejectOrder, reviewOrderPrescription } from "@/server/features/orders/orders.service";
 
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("review"), decision: z.enum(["APPROVE", "REJECT", "CLARIFY"]), note: z.string().trim().max(240).optional() }),

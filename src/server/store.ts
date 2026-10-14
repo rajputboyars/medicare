@@ -4,7 +4,7 @@ import type { PlatformSettings, Role } from "@/lib/types";
 /**
  * Data access for V1. `db()` returns the in-process working set. With DATA_SOURCE=mongo the working set is loaded from
  * MongoDB at server start (src/instrumentation.ts) and every mutating request is written back (src/server/persistence.ts).
- * Business rules live in src/server/services/* and only touch data through `db()`, so a repository layer can replace this later.
+ * Business rules live in src/server/features/* and only touch data through `db()`, so a repository layer can replace this later.
  */
 const g = globalThis as unknown as { __mcDb?: Db };
 

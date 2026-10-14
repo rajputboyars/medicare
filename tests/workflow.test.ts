@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { SessionUser } from "@/lib/types";
 import { MED } from "@/server/seed";
+import { availableQuantity } from "@/lib/types";
 import { db, resetDb, settings } from "@/server/store";
-import { offersFor, pincodeCenter, searchMedicines } from "@/server/services/finder";
-import { advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, confirmPayment, createOrder, getOrderFor, pharmacyOrderView, quoteOrder, rejectOrder, reviewOrderPrescription, reviewPrescription, userSafeOrder } from "@/server/services/orders";
-import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory, earningsSummary, riderStep, riderSummary, setAvailability } from "@/server/services/delivery";
-import { storePrescription } from "@/server/services/prescriptions";
-import { bulkUploadCsv, customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/services/pharmacy";
-import { createMedicineRequest, getCart, myRequests, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/services/requests";
-import { adminList, adminStats, coverageFor, generateSettlements, launchSignup, platformReports, registerPharmacy, registerRider, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/services/admin";
+import { offersFor, pincodeCenter, searchMedicines } from "@/server/features/medicines/finder.service";
+import { codeFor, deliveryOf, advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, confirmPayment, createOrder, getOrderFor, pharmacyOrderView, quoteOrder, rejectOrder, reviewOrderPrescription, reviewPrescription, userSafeOrder } from "@/server/features/orders/orders.service";
+import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory, earningsSummary, riderStep, riderSummary, setAvailability } from "@/server/features/delivery/delivery.service";
+import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
+import { bulkUploadCsv, customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
+import { createMedicineRequest, getCart, myRequests, openRequestsForPharmacy, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/features/medicine-requests/requests.service";
+import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, registerPharmacy, registerRider, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/features/admin/admin.service";
 
 const customer: SessionUser = { id: "u_1", name: "Asha", role: "CUSTOMER" };
 const pharmacist: SessionUser = { id: "u_rx", name: "Kavita", role: "PHARMACIST", partnerId: "ph_1" };
@@ -24,7 +25,10 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3]);
 const rxFile = { name: "rx.png", type: "image/png", bytes: PNG };
 const base = { pharmacyId: "ph_1", addressId: "ad_1", deliveryType: "NORMAL" as const, paymentMethod: "COD" as const };
 const otc = (qty = 2) => createOrder(customer, { ...base, items: [{ medicineId: MED.PARACETAMOL, quantity: qty }] });
-const stockOf = (ph: string, med: string) => db().inventory.filter((i) => i.pharmacyId === ph && i.medicineId === med).reduce((s, i) => s + i.quantity, 0);
+const stockOf = (ph: string, med: string) => db().inventory.filter((i) => i.pharmacyId === ph && i.medicineId === med).reduce((s, i) => s + i.stockQuantity, 0);
+const availableOf = (ph: string, med: string) => db().inventory.filter((i) => i.pharmacyId === ph && i.medicineId === med).reduce((s, i) => s + availableQuantity(i), 0);
+const pickup = (o: { id: string }) => codeFor(deliveryOf(db().orders.find((x) => x.id === o.id)!)!, "PICKUP");
+const dcode = (o: { id: string }) => codeFor(deliveryOf(db().orders.find((x) => x.id === o.id)!)!, "DELIVERY");
 
 /** Drives an order through pharmacy steps up to READY_FOR_PICKUP. */
 function readyOrder(qty = 2) {
@@ -76,7 +80,7 @@ describe("smart local medicine finder", () => {
     expect(insulin.map((o) => o.pharmacyId)).toEqual(["ph_1"]);
   });
   it("skips zero stock and expired batches, sums valid batches", () => {
-    for (const i of db().inventory.filter((x) => x.pharmacyId === "ph_1" && x.medicineId === MED.PARACETAMOL)) i.quantity = 0;
+    for (const i of db().inventory.filter((x) => x.pharmacyId === "ph_1" && x.medicineId === MED.PARACETAMOL)) i.stockQuantity = 0;
     expect(offersFor(MED.PARACETAMOL, "261001").some((o) => o.pharmacyId === "ph_1")).toBe(false);
     const inv = db().inventory.find((i) => i.pharmacyId === "ph_2" && i.medicineId === MED.PARACETAMOL)!;
     inv.expiry = new Date(Date.now() - 1000).toISOString();
@@ -88,9 +92,9 @@ describe("Find This Medicine For Me", () => {
   it("broadcasts, stores responses separately, and notifies when found", () => {
     const req = createMedicineRequest({ medicineQuery: "Rare tonic", mobile: "9876543210", pincode: "261001" }, customer.id);
     expect(req.pharmaciesNotified).toBeGreaterThan(0);
-    respondToRequest(pharmacist, req.id, "OUT_OF_STOCK", { restockEta: "2 days" });
-    expect(db().medicineRequests[0].status).toBe("OPEN");
-    respondToRequest(pharmacist, req.id, "AVAILABLE", {});
+    respondToRequest(pharmacist, req.id, "NOT_AVAILABLE", { restockEta: "2 days" });
+    expect(db().medicineRequests[0].status).toBe("SEARCHING");
+    respondToRequest(pharmacist, req.id, "AVAILABLE", { price: 90, availableQty: 3, prepMinutes: 10 });
     expect(db().medicineRequests[0].status).toBe("FOUND");
     expect(db().medicineRequestResponses.filter((x) => x.requestId === req.id)).toHaveLength(1); // replaced, not duplicated
     expect(db().notifications.some((n) => n.event === "MEDICINE_FOUND" && n.userId === customer.id)).toBe(true);
@@ -101,7 +105,21 @@ describe("Find This Medicine For Me", () => {
   });
   it("only pharmacies serving the pincode may respond", () => {
     const req = createMedicineRequest({ medicineQuery: "Tonic", mobile: "9876543210", pincode: "261125" }, customer.id);
-    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", {})).toThrow(); // ph_1 does not serve 261125
+    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", { price: 90, availableQty: 3, prepMinutes: 10 })).toThrow(); // ph_1 does not serve 261125
+  });
+  it("saying Available needs price, quantity and prep time", () => {
+    const req = createMedicineRequest({ medicineQuery: "Rare tonic", mobile: "9876543210", pincode: "261001", strength: "200 ml", quantity: 2 }, customer.id);
+    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", {})).toThrow(/price/i);
+    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", { price: 90, availableQty: 2 })).toThrow(/prepare/i);
+    expect(() => respondToRequest(pharmacist, req.id, "NOT_AVAILABLE", {})).not.toThrow();
+  });
+  it("lists who was asked and keeps strength and quantity", () => {
+    const req = createMedicineRequest({ medicineQuery: "Rare tonic", mobile: "9876543210", pincode: "261001", strength: "200 ml", quantity: 2 }, customer.id);
+    expect(req.asked.length).toBe(req.pharmaciesNotified);
+    const mine = myRequests(customer).find((r) => r.id === req.id)!;
+    expect(mine.quantity).toBe(2);
+    expect(mine.strength).toBe("200 ml");
+    expect(openRequestsForPharmacy(pharmacist).find((r) => r.id === req.id)).toMatchObject({ quantity: 2, strength: "200 ml", ageMinutes: expect.any(Number) });
   });
 });
 
@@ -164,7 +182,10 @@ describe("prescription rules cannot be bypassed", () => {
     expect(() => repeatOrder(customer, "ord_1")).toThrow(/current prescription/i); // its original prescription was removed above
   });
   it("standalone review only for prescriptions without an active order", () => {
-    expect(() => reviewPrescription(pharmacist, "rx_2", "APPROVE")).toThrow(/from its order/); // rx_2 belongs to a live order
+    // rx_2 belongs to an order under review: approving the prescription moves that order forward with it
+    reviewPrescription(pharmacist, "rx_2", "APPROVE");
+    expect(db().orders.find((o) => o.prescriptionId === "rx_2")!.status).toBe("PRESCRIPTION_APPROVED");
+    expect(() => reviewPrescription(pharmacist, "rx_2", "APPROVE")).toThrow(); // second decision on the same file is refused
     const rx = reviewPrescription(pharmacist, "rx_3", "APPROVE");
     expect(rx.status).toBe("APPROVED");
     expect(prescriptionQueue(pharmacist).callbacks.some((c) => c.prescriptionId === "rx_3")).toBe(false);
@@ -186,12 +207,12 @@ describe("order state machine end to end", () => {
     acceptDelivery(rider1, o.id);
     expect(o.status).toBe("RIDER_ASSIGNED");
     expect(() => riderStep(rider1, o.id, "PICKUP", "0000")).toThrow(/Pickup code/);
-    riderStep(rider1, o.id, "PICKUP", o.pickupOtp);
+    riderStep(rider1, o.id, "PICKUP", pickup(o));
     expect(o.status).toBe("PICKED_UP");
     riderStep(rider1, o.id, "START");
     expect(o.status).toBe("OUT_FOR_DELIVERY");
     expect(() => riderStep(rider1, o.id, "DELIVER", "0000")).toThrow(/Delivery code/);
-    riderStep(rider1, o.id, "DELIVER", o.deliveryOtp);
+    riderStep(rider1, o.id, "DELIVER", dcode(o));
     expect(o.status).toBe("DELIVERED");
     expect(o.paymentStatus).toBe("PAID");
     expect(stockOf("ph_1", MED.PARACETAMOL)).toBe(before - 2);
@@ -205,7 +226,7 @@ describe("order state machine end to end", () => {
     advanceAsPharmacy(pharmacist, o.id, "confirm");
     expect(() => advanceAsPharmacy(pharmacist, o.id, "confirm")).toThrow(/cannot go from/);
     expect(() => acceptDelivery(rider1, o.id)).toThrow(/taken|just/);
-    expect(() => riderStep(rider1, o.id, "PICKUP", o.pickupOtp)).toThrow(); // not their order
+    expect(() => riderStep(rider1, o.id, "PICKUP", pickup(o))).toThrow(); // not their order
   });
 
   it("customer can cancel until pickup; stock returns and paid orders are refunded", () => {
@@ -224,7 +245,7 @@ describe("order state machine end to end", () => {
   it("blocks customer cancellation once the rider has picked up", () => {
     const o = readyOrder();
     acceptDelivery(rider1, o.id);
-    riderStep(rider1, o.id, "PICKUP", o.pickupOtp);
+    riderStep(rider1, o.id, "PICKUP", pickup(o));
     expect(() => cancelOrder(customer, o.id, "late")).toThrow(/on its way/);
   });
 
@@ -233,7 +254,7 @@ describe("order state machine end to end", () => {
     acceptDelivery(rider1, o.id);
     cancelOrder(customer, o.id, "Not needed");
     expect(o.deliveryPartnerId).toBeUndefined();
-    expect(db().deliveries.find((x) => x.orderId === o.id)!.status).toBe("CANCELLED");
+    expect(db().deliveries.find((x) => x.orderId === o.id)!.status).toBe("FAILED");
     expect(riderSummary(rider1).activeJobs).toBe(1); // only the seeded job remains
   });
 
@@ -259,12 +280,13 @@ describe("order state machine end to end", () => {
   });
 
   it("two customers cannot both reserve the last units", () => {
-    for (const i of db().inventory.filter((x) => x.pharmacyId === "ph_1" && x.medicineId === MED.IBUPROFEN)) i.quantity = i === db().inventory.find((x) => x.pharmacyId === "ph_1" && x.medicineId === MED.IBUPROFEN) ? 2 : 0;
+    for (const i of db().inventory.filter((x) => x.pharmacyId === "ph_1" && x.medicineId === MED.IBUPROFEN)) i.stockQuantity = i === db().inventory.find((x) => x.pharmacyId === "ph_1" && x.medicineId === MED.IBUPROFEN) ? 2 : 0;
     const a = createOrder(customer, { ...base, items: [{ medicineId: MED.IBUPROFEN, quantity: 2 }] });
-    const b = createOrder({ id: "u_2", name: "R", role: "CUSTOMER" }, { ...base, addressId: "ad_3", items: [{ medicineId: MED.IBUPROFEN, quantity: 2 }] });
-    advanceAsPharmacy(pharmacist, a.id, "confirm");
-    expect(() => advanceAsPharmacy(pharmacist, b.id, "confirm")).toThrow(/no longer available/);
-    expect(b.status).toBe("PENDING");
+    // The units are promised at checkout, so the second customer is stopped immediately, not at confirmation.
+    expect(availableOf("ph_1", MED.IBUPROFEN)).toBe(0);
+    expect(() => createOrder({ id: "u_2", name: "R", role: "CUSTOMER" }, { ...base, addressId: "ad_3", items: [{ medicineId: MED.IBUPROFEN, quantity: 2 }] })).toThrow(/not available in the quantity/);
+    expect(db().orders.filter((o) => o.items.some((i) => i.medicineId === MED.IBUPROFEN) && o.status === "PENDING")).toHaveLength(1);
+    expect(a.stockState).toBe("RESERVED");
   });
 
   it("prices: delivery fees, offers and admin-configurable settings", () => {
@@ -278,7 +300,7 @@ describe("order state machine end to end", () => {
 
   it("payment goes through the provider layer (COD due → paid on delivery; UPI pending → paid)", () => {
     const cod = otc();
-    expect(cod.paymentStatus).toBe("COD_DUE");
+    expect(cod.paymentStatus).toBe("PENDING");
     const upi = createOrder(customer, { ...base, paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
     expect(upi.paymentStatus).toBe("PENDING");
     expect(() => confirmPayment(customer, cod.id, "x_123")).toThrow(/Cash on Delivery/);
@@ -341,9 +363,9 @@ describe("rider workflow and privacy", () => {
   it("records history and earnings", () => {
     const o = readyOrder();
     acceptDelivery(rider4, o.id);
-    riderStep(rider4, o.id, "PICKUP", o.pickupOtp);
+    riderStep(rider4, o.id, "PICKUP", pickup(o));
     riderStep(rider4, o.id, "START");
-    riderStep(rider4, o.id, "DELIVER", o.deliveryOtp);
+    riderStep(rider4, o.id, "DELIVER", dcode(o));
     expect(deliveryHistory(rider4)[0]).toMatchObject({ orderCode: o.code, payout: settings().riderPayoutNormal });
     const e = earningsSummary(rider4);
     expect(e.today).toEqual({ amount: settings().riderPayoutNormal, count: 1 });
@@ -365,10 +387,10 @@ describe("rider workflow and privacy", () => {
   it("OTPs are shown only to the right party at the right time", () => {
     const o = readyOrder();
     expect(userSafeOrder(o, customer).deliveryOtp).toBeUndefined();
-    expect(userSafeOrder(o, pharmacist).pickupOtp).toBe(o.pickupOtp);
+    expect(userSafeOrder(o, pharmacist).pickupOtp).toBe(pickup(o));
     expect(userSafeOrder(o, customer).pickupOtp).toBeUndefined();
     acceptDelivery(rider4, o.id);
-    expect(userSafeOrder(o, customer).deliveryOtp).toBe(o.deliveryOtp);
+    expect(userSafeOrder(o, customer).deliveryOtp).toBe(dcode(o));
     expect(userSafeOrder(o, pharmacist).deliveryOtp).toBeUndefined();
     expect(pharmacyOrderView(o).rider?.name).toBe("Vikas Pal");
   });
@@ -387,9 +409,9 @@ describe("pharmacy portal data", () => {
     expect(() => quickStockUpdate(owner, other.id, 5)).toThrow();
     const row = db().inventory.find((i) => i.pharmacyId === "ph_1")!;
     const n = db().inventory.length;
-    upsertInventory(owner, { medicineId: row.medicineId, batch: row.batch, expiry: row.expiry, mrp: row.mrp, sellingPrice: row.sellingPrice, quantity: 7, lowStockThreshold: 3 });
+    upsertInventory(owner, { medicineId: row.medicineId, batch: row.batch, expiry: row.expiry, mrp: row.mrp, sellingPrice: row.sellingPrice, stockQuantity: 7, lowStockThreshold: 3 });
     expect(db().inventory).toHaveLength(n);
-    expect(row.quantity).toBe(7);
+    expect(row.stockQuantity).toBe(7);
   });
   it("queue, customers (masked phones), payments and reports reflect real orders", () => {
     const q = prescriptionQueue(pharmacist);
@@ -468,7 +490,7 @@ describe("admin", () => {
   });
   it("settlements: generated once per delivered order with commission, then progress forward only", () => {
     const o = readyOrder(); acceptDelivery(rider4, o.id);
-    riderStep(rider4, o.id, "PICKUP", o.pickupOtp); riderStep(rider4, o.id, "START"); riderStep(rider4, o.id, "DELIVER", o.deliveryOtp);
+    riderStep(rider4, o.id, "PICKUP", pickup(o)); riderStep(rider4, o.id, "START"); riderStep(rider4, o.id, "DELIVER", dcode(o));
     const created = generateSettlements(admin);
     const s = created.find((x) => x.partnerId === "ph_1")!;
     expect(s.orderCount).toBeGreaterThanOrEqual(1);
@@ -486,5 +508,24 @@ describe("admin", () => {
     otc(); // an order placed right now always counts as "today" (seeded orders can fall on yesterday just after midnight)
     expect(adminStats().ordersToday).toBeGreaterThan(0);
     expect(platformReports().days).toHaveLength(7);
+  });
+});
+
+describe("admin attention list", () => {
+  it("flags an order nobody answered, most urgent first", () => {
+    const o = createOrder(customer, { ...base, items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
+    expect(attentionItems().some((a) => a.id === "stuck-pending")).toBe(false); // a fresh order is fine
+    db().orders.find((x) => x.id === o.id)!.createdAt = new Date(Date.now() - 90 * 60_000).toISOString();
+    expect(attentionItems()[0]).toMatchObject({ id: "stuck-pending", severity: "critical" });
+    expect(adminStats().attention.length).toBeGreaterThan(0);
+  });
+});
+
+describe("inventory freshness", () => {
+  it("stamps updatedAt when stock changes", () => {
+    const row = db().inventory.find((i) => i.pharmacyId === "ph_1")!;
+    row.lastUpdatedAt = "2020-01-01T00:00:00.000Z";
+    quickStockUpdate(pharmacist, row.id, row.stockQuantity + 1);
+    expect(Date.parse(row.lastUpdatedAt)).toBeGreaterThan(Date.parse("2021-01-01"));
   });
 });

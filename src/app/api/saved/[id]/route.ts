@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { userSafeOrder } from "@/server/services/orders";
-import { deleteSaved, reorderSaved, toggleReminder } from "@/server/services/requests";
+import { userSafeOrder } from "@/server/features/orders/orders.service";
+import { deleteSaved, reorderSaved, toggleReminder } from "@/server/features/medicine-requests/requests.service";
 
 type Ctx = { params: Promise<{ id: string }> };
 

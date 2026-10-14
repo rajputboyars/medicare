@@ -1,11 +1,33 @@
-/** Runs once when the server starts. With DATA_SOURCE=mongo it loads (or seeds) MongoDB before serving requests. */
+/**
+ * Runs once when the server starts.
+ *  - With DATA_SOURCE=mongo it loads (or seeds) MongoDB before serving requests.
+ *  - It starts a small housekeeping timer: unpaid online orders give their stock back, and old searches close themselves.
+ */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.DATA_SOURCE !== "mongo") return;
-  const { initMongoStore } = await import("./server/persistence");
-  try {
-    await initMongoStore();
-  } catch (e) {
-    if (process.env.NODE_ENV === "production") throw e;
-    console.error("[persistence] MongoDB is not reachable – falling back to the in-memory demo store.", (e as Error).message);
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  if (process.env.DATA_SOURCE === "mongo") {
+    const { initMongoStore } = await import("./server/persistence");
+    try {
+      await initMongoStore();
+    } catch (e) {
+      if (process.env.NODE_ENV === "production") throw e;
+      console.error("[persistence] MongoDB is not reachable or its data is outdated – falling back to the in-memory demo store.", (e as Error).message);
+    }
   }
+
+  const g = globalThis as unknown as { __mcSweeper?: ReturnType<typeof setInterval> };
+  if (g.__mcSweeper) return;
+  const { expireUnpaidOrders } = await import("./server/features/orders/orders.service");
+  const { expireStaleRequests } = await import("./server/features/medicine-requests/requests.service");
+  const { flush, persistenceActive } = await import("./server/persistence");
+  g.__mcSweeper = setInterval(() => {
+    try {
+      const changed = expireUnpaidOrders() + expireStaleRequests();
+      if (changed && persistenceActive()) void flush();
+    } catch (e) {
+      console.error("[sweeper] failed", e);
+    }
+  }, 60_000);
+  g.__mcSweeper.unref?.();
 }

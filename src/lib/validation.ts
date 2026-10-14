@@ -26,7 +26,7 @@ export const registerSchema = z.object({
     .regex(/[A-Za-z]/, "Include a letter")
     .regex(/\d/, "Include a number"),
   consentHealthData: z.literal(true, { error: "Consent is needed to process your health information" }),
-});
+}).strict(); // a signup can never choose its own role
 
 export const addressSchema = z.object({
   label: z.string().trim().min(1).max(30).default("Home"),
@@ -54,17 +54,21 @@ export const familyMemberSchema = z.object({
   preferredPharmacyId: z.string().optional(),
 });
 
+/**
+ * Strict on purpose: the body may only carry CHOICES. A request that also tries to send a price, total, status, payment
+ * status or role is refused outright instead of being silently ignored.
+ */
 export const createOrderSchema = z.object({
   pharmacyId: z.string().min(1),
   addressId: z.string().min(1),
   familyMemberId: z.string().optional(),
-  items: z.array(z.object({ medicineId: z.string().min(1), quantity: z.number().int().min(1).max(20) })).min(1).max(40),
+  items: z.array(z.object({ medicineId: z.string().min(1), quantity: z.number().int().min(1).max(20) }).strict()).min(1).max(40),
   prescriptionId: z.string().optional(),
   deliveryType: z.enum(["NORMAL", "PRIORITY"]).default("NORMAL"),
   paymentMethod: z.enum(["UPI", "COD", "CARD", "WALLET"]),
   offerCode: z.string().optional(),
   isRepeat: z.boolean().optional(),
-});
+}).strict();
 
 export const quickOrderSchema = z.object({
   mobile: mobileSchema,
@@ -79,9 +83,23 @@ export const prescriptionMetaSchema = z.object({
 });
 
 export const medicineRequestSchema = z.object({
-  medicineQuery: z.string().trim().min(2).max(100),
+  medicineQuery: z.string().trim().min(2, "Enter the medicine name").max(100),
+  strength: z.string().trim().max(40).optional().or(z.literal("")),
+  quantity: z.coerce.number().int().min(1, "At least 1").max(99).default(1),
   mobile: mobileSchema,
   pincode: pincodeSchema,
+  prescriptionId: z.string().optional().or(z.literal("")),
+  familyMemberId: z.string().optional().or(z.literal("")),
+});
+
+/** A pharmacy's reply to "Find My Medicine". When it has the medicine it must say price, quantity and prep time. */
+export const requestReplySchema = z.object({
+  response: z.enum(["AVAILABLE", "CAN_ARRANGE", "NOT_AVAILABLE", "ALTERNATIVE_AVAILABLE"]),
+  alternative: z.string().trim().max(100).optional(),
+  restockEta: z.string().trim().max(60).optional(),
+  price: z.coerce.number().positive("Enter the price").max(100000).optional(),
+  availableQty: z.coerce.number().int().min(1, "Enter how many you have").max(10000).optional(),
+  prepMinutes: z.coerce.number().int().min(1, "Enter minutes").max(1440).optional(),
 });
 
 export const launchSignupSchema = z.object({ mobile: mobileSchema, pincode: pincodeSchema });
@@ -92,7 +110,7 @@ export const inventoryItemSchema = z.object({
   expiry: z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Invalid date"),
   mrp: z.coerce.number().positive().max(100000),
   sellingPrice: z.coerce.number().positive().max(100000),
-  quantity: z.coerce.number().int().min(0).max(100000),
+  stockQuantity: z.coerce.number().int().min(0).max(100000),
   lowStockThreshold: z.coerce.number().int().min(0).max(1000).default(10),
 }).refine((v) => v.sellingPrice <= v.mrp, { message: "Selling price cannot exceed MRP", path: ["sellingPrice"] });
 
@@ -147,7 +165,8 @@ export const serviceAreaSchema = z.object({
   state: z.string().trim().min(2).max(60),
   district: z.string().trim().max(60).optional(),
   pincode: pincodeSchema.optional(),
-  active: z.boolean().default(false),
+  town: z.string().trim().max(60).optional(),
+  status: z.enum(["ACTIVE", "COMING_SOON", "DISABLED"]).default("COMING_SOON"),
 });
 
 /** Naive CSV parser (quoted fields supported) used by inventory bulk upload. */

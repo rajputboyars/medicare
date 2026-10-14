@@ -123,11 +123,19 @@ export interface PharmacyInventory {
   expiry: string;
   mrp: number;
   sellingPrice: number;
-  quantity: number;
+  /** Units physically on the shelf (includes units reserved for orders that are not yet confirmed). */
+  stockQuantity: number;
+  /** Units promised to open orders. availableQuantity = stockQuantity - reservedQuantity. */
+  reservedQuantity: number;
   lowStockThreshold: number;
+  /** When this stock line was last changed: shown to customers as "Updated 2h ago". */
+  lastUpdatedAt: string;
 }
 
-export type PrescriptionStatus = "RECEIVED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "NEEDS_CLARIFICATION";
+export const availableQuantity = (i: Pick<PharmacyInventory, "stockQuantity" | "reservedQuantity">) => Math.max(0, i.stockQuantity - i.reservedQuantity);
+
+/** NEEDS_CLARIFICATION is an extra holding state used when the pharmacist asks for a clearer photo (the order stays open). */
+export type PrescriptionStatus = "UPLOADED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "EXPIRED" | "NEEDS_CLARIFICATION";
 
 export interface Prescription {
   id: string;
@@ -143,8 +151,11 @@ export interface Prescription {
   reviewedBy?: string;
   reviewNote?: string;
   pharmacyId?: string;
-  source: "UPLOAD" | "QUICK_ORDER";
+  source: "UPLOAD" | "QUICK_ORDER" | "REQUEST";
   callbackMobile?: string;
+  reviewedAt?: string;
+  /** Approved prescriptions stop being usable for NEW orders after this date (default: 6 months). */
+  expiresAt?: string;
   createdAt: string;
 }
 
@@ -165,7 +176,8 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export type DeliveryType = "NORMAL" | "PRIORITY";
 export type PaymentMethod = "UPI" | "COD" | "CARD" | "WALLET";
-export type PaymentStatus = "PENDING" | "PAID" | "COD_DUE" | "REFUNDED" | "FAILED";
+/** COD orders stay PENDING until the rider hands over the parcel and collects the cash. */
+export type PaymentStatus = "PENDING" | "AUTHORIZED" | "PAID" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
 
 export interface OrderItem {
   id: string;
@@ -179,12 +191,29 @@ export interface OrderItem {
   prescriptionRequired: boolean;
 }
 
+/** Convenience view of an OrderStatusHistory row (same data, shorter names) kept on the order for fast rendering. */
 export interface StatusEvent {
   status: OrderStatus;
   at: string;
   note?: string;
   by?: Role;
 }
+
+/** Append-only ledger: one row for every order transition. Persisted as its own collection. */
+export interface OrderStatusHistory {
+  id: string;
+  orderId: string;
+  fromStatus?: OrderStatus;
+  toStatus: OrderStatus;
+  /** User id, or "system" for automatic changes such as expiry. */
+  changedBy: string;
+  actorRole: Role | "SYSTEM";
+  note?: string;
+  timestamp: string;
+}
+
+export type StockState = "NONE" | "RESERVED" | "CONSUMED" | "RELEASED";
+export interface StockAllocation { inventoryId: string; quantity: number }
 
 export interface Order {
   id: string;
@@ -206,10 +235,12 @@ export interface Order {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   etaMinutes: number;
-  deliveryOtp: string;
-  pickupOtp: string;
   deliveryPartnerId?: string;
-  stockReserved?: boolean;
+  /** Which inventory batches hold this order's units, and whether they are reserved, consumed or given back. */
+  stockAllocations: StockAllocation[];
+  stockState: StockState;
+  /** Unpaid online orders release their stock if payment does not arrive by this time. */
+  paymentExpiresAt?: string;
   settlementId?: string;
   cancelReason?: string;
   cancelledBy?: Role;
@@ -238,15 +269,29 @@ export interface DeliveryPartner {
   joinedAt: string;
 }
 
+export type RiderStatus = "OFFLINE" | "AVAILABLE" | "BUSY" | "SUSPENDED";
+export type DeliveryStatus = "WAITING_FOR_RIDER" | "ASSIGNED" | "AT_PHARMACY" | "PICKED_UP" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED";
+
 export interface Delivery {
   id: string;
   orderId: string;
-  partnerId: string;
-  status: "ASSIGNED" | "PICKED_UP" | "DELIVERED" | "CANCELLED";
+  /** Empty while WAITING_FOR_RIDER */
+  partnerId?: string;
+  status: DeliveryStatus;
   payout: number;
   cashToCollect: number;
-  acceptedAt: string;
+  /** One-time codes are never stored. We keep a keyed hash, a per-delivery nonce and a failed-attempt counter. */
+  pickupOtpHash: string;
+  deliveryOtpHash: string;
+  otpNonce: string;
+  pickupAttempts: number;
+  deliveryAttempts: number;
+  failureReason?: string;
+  createdAt: string;
+  acceptedAt?: string;
+  atPharmacyAt?: string;
   pickedUpAt?: string;
+  outForDeliveryAt?: string;
   deliveredAt?: string;
 }
 
@@ -257,8 +302,10 @@ export interface Payment {
   method: PaymentMethod;
   provider: "COD" | "MOCK" | "RAZORPAY";
   amount: number;
+  refundedAmount: number;
   status: PaymentStatus;
   providerRef?: string;
+  paidAt?: string;
   createdAt: string;
 }
 
@@ -280,19 +327,37 @@ export interface MedicineRequest {
   id: string;
   userId: string;
   medicineQuery: string;
+  strength?: string;
+  quantity: number;
   mobile: string;
   pincode: string;
-  status: "OPEN" | "FOUND" | "CLOSED";
+  /** Optional private files the customer chose to share with nearby pharmacies */
+  photoRxId?: string;
+  prescriptionId?: string;
+  /** The person the medicine is for (a family member), if chosen */
+  familyMemberId?: string;
+  medicineId?: string;
+  serviceAreaId?: string;
+  status: MedicineRequestStatus;
+  expiresAt: string;
   createdAt: string;
 }
+
+export type MedicineRequestStatus = "SEARCHING" | "FOUND" | "NOT_FOUND" | "EXPIRED" | "CANCELLED";
+export type RequestResponseKind = "AVAILABLE" | "CAN_ARRANGE" | "NOT_AVAILABLE" | "ALTERNATIVE_AVAILABLE";
 
 export interface MedicineRequestResponse {
   id: string;
   requestId: string;
   pharmacyId: string;
-  response: "AVAILABLE" | "ALTERNATIVE" | "OUT_OF_STOCK";
+  response: RequestResponseKind;
+  /** Only ever a suggestion for the customer to consider: prescription medicines are never swapped automatically. */
   alternative?: string;
   restockEta?: string;
+  /** Filled when the pharmacy has it: price per unit, units available and how long to prepare. */
+  price?: number;
+  availableQty?: number;
+  prepMinutes?: number;
   at: string;
 }
 
@@ -339,14 +404,17 @@ export interface SupportTicket {
   createdAt: string;
 }
 
+export type ServiceAreaStatus = "ACTIVE" | "COMING_SOON" | "DISABLED";
+
 export interface ServiceArea {
   id: string;
   level: "STATE" | "DISTRICT" | "TOWN" | "PINCODE";
   name: string;
   state: string;
   district?: string;
+  town?: string;
   pincode?: string;
-  active: boolean;
+  status: ServiceAreaStatus;
   launchSignups: string[];
 }
 

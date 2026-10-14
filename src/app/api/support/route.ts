@@ -1,6 +1,6 @@
 import { supportTicketSchema } from "@/lib/validation";
 import { handle, limit, parseBody, requireUser } from "@/server/http";
-import { createTicket } from "@/server/services/admin";
+import { createTicket } from "@/server/features/admin/admin.service";
 import { db } from "@/server/store";
 
 export const GET = handle(async () => {

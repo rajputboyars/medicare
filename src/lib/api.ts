@@ -21,7 +21,11 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
     throw new ApiClientError("No internet connection. Please check your network and try again.", 0);
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiClientError(body.error ?? "Something went wrong", res.status, body.fields);
+  if (!res.ok) {
+    const items: { field?: string; message: string }[] = body.errors ?? [];
+    const fields = Object.fromEntries(items.filter((e) => e.field).map((e) => [e.field as string, e.message]));
+    throw new ApiClientError(body.message ?? "Something went wrong", res.status, Object.keys(fields).length ? fields : undefined);
+  }
   return body.data as T;
 }
 

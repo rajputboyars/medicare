@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import type * as T from "@/lib/types";
-import { STOCK_RESERVED_FROM } from "@/lib/order-machine";
+import { deriveOtp, hashOtp, newNonce } from "@/server/features/delivery/otp";
 
 /**
  * Realistic DEMO data. All names, licences and phone numbers are fictional.
@@ -18,6 +18,7 @@ export interface Db {
   prescriptions: T.Prescription[];
   carts: T.Cart[];
   orders: T.Order[];
+  orderStatusHistory: T.OrderStatusHistory[];
   deliveryPartners: T.DeliveryPartner[];
   deliveries: T.Delivery[];
   payments: T.Payment[];
@@ -114,15 +115,15 @@ export function buildSeed(): Db {
       inventory.push({
         id: `inv_${inventory.length + 1}`, pharmacyId: p.id, medicineId: m.id, batch: `B${Math.floor(r() * 9000 + 1000)}`,
         expiry: daysAhead(120 + Math.floor(r() * 500)), mrp: m.mrp, sellingPrice: Math.round(m.mrp * (0.88 + r() * 0.1)),
-        quantity: r() < 0.12 ? Math.floor(r() * 6) : 25 + Math.floor(r() * 80), lowStockThreshold: 10,
+        stockQuantity: r() < 0.12 ? Math.floor(r() * 6) : 25 + Math.floor(r() * 80), reservedQuantity: 0, lowStockThreshold: 10, lastUpdatedAt: hoursAgo(0.3 + r() * 70),
       });
     }
   }
   const forceStock = (phId: string, medId: string, qty: number) => {
     const row = inventory.find((i) => i.pharmacyId === phId && i.medicineId === medId);
     const med = medicines.find((m) => m.id === medId)!;
-    if (row) row.quantity = Math.max(row.quantity, qty);
-    else inventory.push({ id: `inv_${inventory.length + 1}`, pharmacyId: phId, medicineId: medId, batch: "B1001", expiry: daysAhead(300), mrp: med.mrp, sellingPrice: Math.round(med.mrp * 0.92), quantity: qty, lowStockThreshold: 10 });
+    if (row) row.stockQuantity = Math.max(row.stockQuantity, qty);
+    else inventory.push({ id: `inv_${inventory.length + 1}`, pharmacyId: phId, medicineId: medId, batch: "B1001", expiry: daysAhead(300), mrp: med.mrp, sellingPrice: Math.round(med.mrp * 0.92), stockQuantity: qty, reservedQuantity: 0, lowStockThreshold: 10, lastUpdatedAt: hoursAgo(1.5) });
   };
   for (const id of [MED.METFORMIN, MED.TELMISARTAN, MED.AMLODIPINE, MED.THYRONORM, MED.PARACETAMOL, MED.CROCIN, MED.ORS, MED.CETIRIZINE, MED.VITAMIN_D, MED.IBUPROFEN]) forceStock("ph_1", id, 80);
   for (const id of [MED.METFORMIN, MED.PARACETAMOL, MED.ORS, MED.CETIRIZINE, MED.VITAMIN_D]) forceStock("ph_2", id, 60);
@@ -131,7 +132,7 @@ export function buildSeed(): Db {
   forceStock("ph_1", MED.INSULIN, 8);
   forceStock("ph_1", MED.THERMOMETER, 12);
   const low = inventory.find((i) => i.pharmacyId === "ph_1" && i.medicineId === MED.THYRONORM);
-  if (low) low.quantity = 4; // deliberate low-stock alert
+  if (low) low.stockQuantity = 4; // deliberate low-stock alert
   forceStock("ph_1", MED.ALPRAZOLAM, 20); // restricted item, to demonstrate the guard
 
   // ---------- Users ----------
@@ -201,23 +202,35 @@ export function buildSeed(): Db {
     const step = s.ageH / (Math.max(upto, 0) + 2);
     const statusHistory: T.StatusEvent[] = path.slice(0, upto + 1).map((st, i) => ({ status: st, at: hoursAgo(s.ageH - step * i), by: i === 0 ? "CUSTOMER" : "PHARMACIST" }));
     if (s.status === "CANCELLED") statusHistory.push({ status: "CANCELLED", at: hoursAgo(s.ageH / 2), note: s.reason, by: s.by });
-    const paymentStatus: T.PaymentStatus = s.status === "CANCELLED" ? (s.paid ? "REFUNDED" : s.pay === "COD" ? "COD_DUE" : "FAILED") : s.pay === "COD" ? (s.status === "DELIVERED" ? "PAID" : "COD_DUE") : s.paid === false ? "PENDING" : "PAID";
-    const reserved = STOCK_RESERVED_FROM.includes(s.status);
+    const paymentStatus: T.PaymentStatus = s.status === "CANCELLED" ? (s.paid ? "REFUNDED" : "FAILED") : s.pay === "COD" ? (s.status === "DELIVERED" ? "PAID" : "PENDING") : s.paid === false ? "PENDING" : "PAID";
+    // Stock lifecycle: reserved at checkout, consumed when the pharmacy confirms, released when cancelled
+    const stockState: T.StockState = s.status === "CANCELLED" ? "RELEASED" : ["PENDING", "PRESCRIPTION_REVIEW", "PRESCRIPTION_APPROVED"].includes(s.status) ? "RESERVED" : "CONSUMED";
+    const stockAllocations: T.StockAllocation[] = [];
+    if (stockState !== "RELEASED") for (const it of items) { const inv = inventory.find((i) => i.pharmacyId === s.ph && i.medicineId === it.medicineId); if (inv) stockAllocations.push({ inventoryId: inv.id, quantity: it.quantity }); }
     const o: T.Order = {
       id, code, userId: s.userId, familyMemberId: s.fm, pharmacyId: s.ph, addressId: a.id, addressSnapshot: snap(a), items, prescriptionId: s.rx,
       status: s.status, statusHistory, deliveryType: type, subtotal, deliveryFee: fee, discount: 0, total: subtotal + fee, paymentMethod: s.pay, paymentStatus,
-      etaMinutes: type === "PRIORITY" ? 28 : 42, deliveryOtp: String(4000 + seq * 137).slice(0, 4), pickupOtp: String(1000 + seq * 211).slice(0, 4),
-      deliveryPartnerId: s.rider, stockReserved: reserved, cancelReason: s.reason, cancelledBy: s.by, createdAt: hoursAgo(s.ageH),
+      etaMinutes: type === "PRIORITY" ? 28 : 42,
+      deliveryPartnerId: s.rider, stockAllocations, stockState, cancelReason: s.reason, cancelledBy: s.by, createdAt: hoursAgo(s.ageH),
     };
     orders.push(o);
-    if (reserved) for (const it of items) { const inv = inventory.find((i) => i.pharmacyId === s.ph && i.medicineId === it.medicineId); if (inv) inv.quantity = Math.max(0, inv.quantity - it.quantity); }
-    payments.push({ id: `pay_${seq}`, orderId: id, userId: s.userId, method: s.pay, provider: s.pay === "COD" ? "COD" : "MOCK", amount: o.total, status: paymentStatus, providerRef: s.pay === "COD" ? undefined : `demo_${s.pay.toLowerCase()}_${seq}`, createdAt: o.createdAt });
-    if (s.rider && ["RIDER_ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"].includes(s.status)) {
+    for (const a of stockAllocations) {
+      const inv = inventory.find((i) => i.id === a.inventoryId)!;
+      if (stockState === "RESERVED") inv.reservedQuantity += a.quantity;
+      else if (s.status !== "DELIVERED") inv.stockQuantity = Math.max(0, inv.stockQuantity - a.quantity);
+    }
+    payments.push({ id: `pay_${seq}`, orderId: id, userId: s.userId, method: s.pay, provider: s.pay === "COD" ? "COD" : "MOCK", amount: o.total, refundedAmount: paymentStatus === "REFUNDED" ? o.total : 0, status: paymentStatus, providerRef: s.pay === "COD" ? undefined : `demo_${s.pay.toLowerCase()}_${seq}`, createdAt: o.createdAt });
+    if (["READY_FOR_PICKUP", "RIDER_ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"].includes(s.status)) {
+      const dlId = `dl_${seq}`;
+      const nonce = newNonce();
       const delivered = s.status === "DELIVERED";
+      const dstatus: T.DeliveryStatus = delivered ? "DELIVERED" : s.status === "READY_FOR_PICKUP" ? "WAITING_FOR_RIDER" : s.status === "RIDER_ASSIGNED" ? "ASSIGNED" : s.status === "PICKED_UP" ? "PICKED_UP" : "OUT_FOR_DELIVERY";
       deliveries.push({
-        id: `dl_${seq}`, orderId: id, partnerId: s.rider, status: delivered ? "DELIVERED" : s.status === "RIDER_ASSIGNED" ? "ASSIGNED" : "PICKED_UP",
+        id: dlId, orderId: id, partnerId: s.status === "READY_FOR_PICKUP" ? undefined : s.rider, status: dstatus,
         payout: type === "PRIORITY" ? settings.riderPayoutPriority : settings.riderPayoutNormal, cashToCollect: s.pay === "COD" ? o.total : 0,
-        acceptedAt: hoursAgo(s.ageH / 2), pickedUpAt: s.status === "RIDER_ASSIGNED" ? undefined : hoursAgo(s.ageH / 3), deliveredAt: delivered ? hoursAgo(Math.max(0.3, s.ageH / 6)) : undefined,
+        otpNonce: nonce, pickupOtpHash: hashOtp(dlId, "PICKUP", deriveOtp(dlId, nonce, "PICKUP")), deliveryOtpHash: hashOtp(dlId, "DELIVERY", deriveOtp(dlId, nonce, "DELIVERY")), pickupAttempts: 0, deliveryAttempts: 0,
+        createdAt: hoursAgo(s.ageH / 2), acceptedAt: s.status === "READY_FOR_PICKUP" ? undefined : hoursAgo(s.ageH / 2),
+        pickedUpAt: ["RIDER_ASSIGNED", "READY_FOR_PICKUP"].includes(s.status) ? undefined : hoursAgo(s.ageH / 3), deliveredAt: delivered ? hoursAgo(Math.max(0.3, s.ageH / 6)) : undefined,
       });
     }
     return o;
@@ -241,7 +254,7 @@ export function buildSeed(): Db {
   const prescriptions: T.Prescription[] = [
     { id: "rx_1", userId: "u_1", familyMemberId: "fm_2", fileKey: "rx_1.png", fileName: "prescription-march.png", mimeType: "image/png", sizeBytes: PNG_1PX.byteLength, status: "APPROVED", requestedMedicines: ["Metformin 500", "Telmisartan 40"], reviewedBy: "u_rx", pharmacyId: "ph_1", source: "UPLOAD", createdAt: hoursAgo(24 * 31) },
     { id: "rx_2", userId: "u_2", familyMemberId: "fm_5", fileKey: "rx_2.png", fileName: "bp-prescription.png", mimeType: "image/png", sizeBytes: PNG_1PX.byteLength, status: "UNDER_REVIEW", requestedMedicines: ["Amlodipine 5"], pharmacyId: "ph_1", source: "UPLOAD", createdAt: hoursAgo(0.3) },
-    { id: "rx_3", userId: "guest:9811122233", fileKey: "rx_3.png", fileName: "photo.png", mimeType: "image/png", sizeBytes: PNG_1PX.byteLength, status: "RECEIVED", requestedMedicines: [], source: "QUICK_ORDER", callbackMobile: "9811122233", createdAt: hoursAgo(0.5) },
+    { id: "rx_3", userId: "guest:9811122233", fileKey: "rx_3.png", fileName: "photo.png", mimeType: "image/png", sizeBytes: PNG_1PX.byteLength, status: "UPLOADED", requestedMedicines: [], source: "QUICK_ORDER", callbackMobile: "9811122233", createdAt: hoursAgo(0.5) },
   ];
   const files = new Map<string, { bytes: Uint8Array; mimeType: string; ownerId: string }>();
   for (const p of prescriptions) files.set(p.fileKey, { bytes: PNG_1PX, mimeType: "image/png", ownerId: p.userId });
@@ -255,20 +268,28 @@ export function buildSeed(): Db {
   ];
 
   const requests: T.MedicineRequest[] = [
-    { id: "req_1", userId: "u_2", medicineQuery: "Liv-52 syrup", mobile: "9876500002", pincode: "261001", status: "OPEN", createdAt: hoursAgo(2) },
-    { id: "req_2", userId: "u_3", medicineQuery: "Digene gel", mobile: "9876500003", pincode: "261121", status: "FOUND", createdAt: hoursAgo(20) },
+    { id: "req_1", userId: "u_2", medicineQuery: "Liv-52 syrup", strength: "200 ml", quantity: 2, mobile: "9876500002", pincode: "261001", status: "SEARCHING", expiresAt: daysAhead(1), createdAt: hoursAgo(2) },
+    { id: "req_3", userId: "u_5", medicineQuery: "Cremaffin syrup", strength: "225 ml", quantity: 1, mobile: "9876500005", pincode: "261001", status: "SEARCHING", expiresAt: daysAhead(1), createdAt: hoursAgo(0.2) },
+    { id: "req_2", userId: "u_3", medicineQuery: "Digene gel", strength: "200 ml", quantity: 1, mobile: "9876500003", pincode: "261121", status: "FOUND", expiresAt: daysAhead(1), createdAt: hoursAgo(20) },
   ];
 
+  // The OrderStatusHistory ledger, rebuilt from each order's recorded steps
+  const orderStatusHistory: T.OrderStatusHistory[] = orders.flatMap((o) => o.statusHistory.map((e, i) => ({
+    id: `osh_${o.id}_${i + 1}`, orderId: o.id, fromStatus: i === 0 ? undefined : o.statusHistory[i - 1].status, toStatus: e.status,
+    changedBy: e.by === "CUSTOMER" ? o.userId : e.by === "DELIVERY_PARTNER" ? (o.deliveryPartnerId ?? "u_dp1") : e.by === "SUPER_ADMIN" ? "u_admin" : "u_rx",
+    actorRole: e.by ?? ("SYSTEM" as const), note: e.note, timestamp: e.at,
+  })));
+
   return {
-    users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, deliveryPartners, deliveries, payments,
+    users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory, deliveryPartners, deliveries, payments,
     settlements: [
       { id: "set_1", partnerType: "PHARMACY", partnerId: "ph_1", periodStart: hoursAgo(24 * 37), periodEnd: hoursAgo(24 * 7), orderCount: 2, gross: orders[0].total + orders[6].total, commission: Math.round((orders[0].total + orders[6].total) * 0.08), net: Math.round((orders[0].total + orders[6].total) * 0.92), status: "PAID", createdAt: hoursAgo(24 * 7) },
       { id: "set_2", partnerType: "DELIVERY", partnerId: "dp_1", periodStart: hoursAgo(24 * 7), periodEnd: hoursAgo(0), orderCount: 1, gross: 45, commission: 0, net: 45, status: "PROCESSING", createdAt: hoursAgo(2) },
     ],
     medicineRequests: requests,
     medicineRequestResponses: [
-      { id: "rr_1", requestId: "req_1", pharmacyId: "ph_2", response: "OUT_OF_STOCK", restockEta: "2 days", at: hoursAgo(1.5) },
-      { id: "rr_2", requestId: "req_2", pharmacyId: "ph_3", response: "AVAILABLE", at: hoursAgo(18) },
+      { id: "rr_1", requestId: "req_1", pharmacyId: "ph_2", response: "NOT_AVAILABLE", restockEta: "2 days", at: hoursAgo(1.5) },
+      { id: "rr_2", requestId: "req_2", pharmacyId: "ph_3", response: "AVAILABLE", price: 108, availableQty: 6, prepMinutes: 15, at: hoursAgo(18) },
     ],
     reviews: [{ id: "rv_1", userId: "u_1", pharmacyId: "ph_1", orderId: "ord_1", rating: 5, comment: "Medicines reached before evening.", createdAt: hoursAgo(24 * 29) }],
     notifications: [{ id: "n_1", userId: "u_1", event: "ORDER_CONFIRMED", channels: ["SMS", "PUSH"], title: "Order confirmed", body: "Your order MC-51907 is confirmed by Shree Ram Medical Store.", read: false, createdAt: hoursAgo(1) }],
@@ -277,9 +298,9 @@ export function buildSeed(): Db {
       { id: "tk_2", userId: "u_2", subject: "Change of address", message: "How do I change the delivery address on a saved order?", status: "RESOLVED", createdAt: hoursAgo(48) },
     ],
     serviceAreas: [
-      { id: "sa_1", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", active: true, launchSignups: [] },
-      { id: "sa_2", level: "PINCODE", name: "261121", state: "Uttar Pradesh", district: "Sitapur", pincode: "261121", active: true, launchSignups: [] },
-      { id: "sa_3", level: "PINCODE", name: "261125", state: "Uttar Pradesh", district: "Sitapur", pincode: "261125", active: true, launchSignups: [] },
+      { id: "sa_1", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "ACTIVE", launchSignups: [] },
+      { id: "sa_2", level: "PINCODE", name: "261121", state: "Uttar Pradesh", district: "Sitapur", pincode: "261121", status: "ACTIVE", launchSignups: [] },
+      { id: "sa_3", level: "PINCODE", name: "261125", state: "Uttar Pradesh", district: "Sitapur", pincode: "261125", status: "ACTIVE", launchSignups: [] },
     ],
     savedMedicines: [
       { id: "sv_1", userId: "u_1", familyMemberId: "fm_2", label: "Diabetes & Blood Pressure", items: [{ medicineId: MED.METFORMIN, quantity: 3 }, { medicineId: MED.TELMISARTAN, quantity: 1 }], everyDays: 30, nextRefillAt: daysAhead(4), reminderOn: true, preferredPharmacyId: "ph_1" },

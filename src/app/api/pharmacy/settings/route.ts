@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pincodeSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { pharmacyOf, updatePharmacySettings } from "@/server/services/pharmacy";
+import { pharmacyOf, updatePharmacySettings } from "@/server/features/pharmacy/pharmacy.service";
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const schema = z.object({

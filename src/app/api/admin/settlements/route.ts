@@ -1,5 +1,5 @@
 import { handle, requireUser } from "@/server/http";
-import { generateSettlements } from "@/server/services/admin";
+import { generateSettlements } from "@/server/features/admin/admin.service";
 
 /** Creates pending settlements for delivered, not-yet-settled pharmacy orders. */
 export const POST = handle(async () => {

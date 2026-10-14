@@ -1,12 +1,12 @@
 "use client";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Phone } from "lucide-react";
+import { AlertTriangle, Clock, FileText, Phone } from "lucide-react";
 import { api, post } from "@/lib/api";
-import { fmtDateTime } from "@/lib/hooks";
+import { fmtDateTime, useNow } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
-import { STATUS_LABEL, statusTone } from "@/lib/order-machine";
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Notice, QueryBoundary, SkeletonList } from "@/components/ui";
+import { OrderStatusBadge } from "@/components/order/order-status-badge";
+import { Badge, Button, Card, ConfirmationDialog, EmptyState, Input, Notice, QueryBoundary, SkeletonList, StatusBadge } from "@/components/ui";
 import type { OrderItem, OrderStatus, PrescriptionStatus } from "@/lib/types";
 
 export interface PharmacyOrder {
@@ -21,10 +21,17 @@ export const GROUPS = {
   review: ["PRESCRIPTION_REVIEW"],
   new: ["PENDING", "PRESCRIPTION_APPROVED"],
   progress: ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "RIDER_ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"],
+  ready: ["READY_FOR_PICKUP", "RIDER_ASSIGNED"],
   history: ["DELIVERED", "CANCELLED"],
 } as const;
 export type Group = keyof typeof GROUPS;
-const EMPTY: Record<Group, string> = { review: "No prescriptions waiting", new: "No new orders", progress: "Nothing in progress", history: "No history yet" };
+const EMPTY: Record<Group, [string, string]> = {
+  review: ["No prescriptions waiting", "New prescription orders appear here automatically."],
+  new: ["No new orders", "New orders appear here automatically."],
+  progress: ["Nothing in progress", "Orders you have confirmed show here until they are delivered."],
+  ready: ["Nothing waiting for a rider", "Orders you mark ready appear here."],
+  history: ["No history yet", "Delivered and cancelled orders appear here."],
+};
 
 export function useViewPrescription() {
   const [err, setErr] = useState<string>();
@@ -35,58 +42,81 @@ export function useViewPrescription() {
   return { view, err };
 }
 
+type Dialog = "reject" | "clarify" | null;
+
+/**
+ * One order, with the next obvious action as the big button.
+ * Destructive actions (reject / cancel) always ask first and need a reason that the customer will see.
+ */
 export function OrderCard({ o }: { o: PharmacyOrder }) {
   const qc = useQueryClient();
-  const [mode, setMode] = useState<"none" | "reject" | "clarify">("none");
+  const [dialog, setDialog] = useState<Dialog>(null);
   const [note, setNote] = useState("");
   const { view, err } = useViewPrescription();
   const refresh = () => ["pharmacy-orders", "pharmacy-dashboard", "pharmacy-rx"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const run = useMutation({
     mutationFn: (body: Record<string, unknown>) => post(`/api/pharmacy/orders/${o.id}`, body),
-    onSuccess: () => { setMode("none"); setNote(""); refresh(); },
+    onSuccess: () => { setDialog(null); setNote(""); refresh(); },
   });
   const step = (s: "confirm" | "prepare" | "ready") => run.mutate({ action: "step", step: s });
-  const busy = run.isPending;
+  const now = useNow();
+  const waitingMin = Math.round((now - Date.parse(o.createdAt)) / 60_000);
+  const urgent = ["PENDING", "PRESCRIPTION_REVIEW"].includes(o.status) && waitingMin > 15;
+  const cancellable = ["PRESCRIPTION_REVIEW", "PENDING", "PRESCRIPTION_APPROVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "RIDER_ASSIGNED"].includes(o.status);
+  const closeDialog = () => { setDialog(null); setNote(""); run.reset(); };
 
   return (
-    <Card as="article" className="space-y-3">
+    <Card as="article" className={urgent ? "space-y-3 border-warn-line" : "space-y-3"}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div><h3 className="text-lg font-extrabold">{o.code} <span className="text-sm font-normal text-muted">· {fmtDateTime(o.createdAt)}</span></h3>
-          <p className="text-sm text-muted">Patient: {o.patient.name}{o.patient.age ? `, ${o.patient.age} yrs` : ""} · {o.area}</p></div>
-        <div className="flex flex-wrap gap-2"><Badge tone={statusTone(o.status)}>{STATUS_LABEL[o.status]}</Badge>{o.deliveryType === "PRIORITY" && <Badge tone="red">Priority</Badge>}</div>
-      </div>
-      {o.patient.allergies && <Badge tone="red">Allergy: {o.patient.allergies}</Badge>}
-      <ul className="divide-y divide-line text-sm">{o.items.map((i) => <li key={i.id} className="flex justify-between py-1.5"><span>{i.name} <span className="text-muted">{i.strength}</span> ×{i.quantity} {i.prescriptionRequired && <Badge tone="amber">Rx</Badge>}</span><b>{inr(i.unitPrice * i.quantity)}</b></li>)}</ul>
-      <p className="flex justify-between font-bold"><span>{o.paymentMethod} · {o.paymentStatus.replace("_", " ").toLowerCase()}</span><span>{inr(o.total)}</span></p>
-
-      {o.prescription && <div className="flex flex-wrap items-center gap-2"><Button variant="secondary" className="min-h-11" onClick={() => view(o.prescription!.id)}><FileText className="size-5" aria-hidden /> View prescription</Button><Badge tone={o.prescription.status === "APPROVED" ? "green" : "amber"}>{o.prescription.status.replace("_", " ").toLowerCase()}</Badge></div>}
-      {err && <p role="alert" className="text-sm text-emergency">{err}</p>}
-
-      {o.status === "PRESCRIPTION_REVIEW" && <Notice tone="amber">Check the doctor&apos;s details, date and every medicine against the order. We never substitute medicines. If something is unclear, ask for a clearer copy; if it is invalid, reject with a reason.</Notice>}
-      {o.pickupOtp && <Notice tone="blue" title="Pickup code for the rider">Give this code to the delivery partner when they collect the parcel: <b className="text-2xl tracking-widest">{o.pickupOtp}</b></Notice>}
-      {o.rider && <p className="flex flex-wrap items-center gap-2 text-sm"><b>Rider:</b> {o.rider.name} <a href={`tel:${o.rider.mobile}`} className="inline-flex min-h-10 items-center gap-1 font-semibold text-brand-700"><Phone className="size-4" aria-hidden /> Call</a></p>}
-      {o.status === "CANCELLED" && o.note && <p className="text-sm text-muted">Reason: {o.note}</p>}
-      {run.isError && <ErrorState message={(run.error as Error).message} />}
-
-      {mode !== "none" ? (
-        <div className="space-y-2">
-          <Input label={mode === "reject" ? "Reason (shown to the customer)" : "What is unclear? (shown to the customer)"} value={note} onChange={(e) => setNote(e.target.value)} />
-          <div className="flex flex-wrap gap-2">
-            {mode === "reject" && <Button variant="danger" disabled={note.trim().length < 3} loading={busy} onClick={() => run.mutate(o.status === "PRESCRIPTION_REVIEW" ? { action: "review", decision: "REJECT", note } : { action: "reject", note })}>Confirm reject</Button>}
-            {mode === "clarify" && <Button disabled={note.trim().length < 3} loading={busy} onClick={() => run.mutate({ action: "review", decision: "CLARIFY", note })}>Ask for a clearer copy</Button>}
-            <Button variant="ghost" onClick={() => setMode("none")}>Back</Button>
-          </div>
+        <div className="min-w-0">
+          <h3 className="t-card">{o.code} <span className="t-caption font-normal">· {fmtDateTime(o.createdAt)}</span></h3>
+          <p className="t-support">Patient: {o.patient.name}{o.patient.age ? `, ${o.patient.age} yrs` : ""} · {o.area}</p>
         </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {o.status === "PRESCRIPTION_REVIEW" && <><Button loading={busy} onClick={() => run.mutate({ action: "review", decision: "APPROVE" })}>Approve prescription</Button><Button variant="secondary" onClick={() => setMode("clarify")}>Need clearer copy</Button></>}
-          {(o.status === "PENDING" || o.status === "PRESCRIPTION_APPROVED") && <Button loading={busy} onClick={() => step("confirm")}>Accept &amp; confirm order</Button>}
-          {o.status === "CONFIRMED" && <Button loading={busy} onClick={() => step("prepare")}>Start preparing</Button>}
-          {o.status === "PREPARING" && <Button loading={busy} onClick={() => step("ready")}>Mark ready for pickup</Button>}
-          {o.status === "READY_FOR_PICKUP" && <><Button loading={busy} onClick={() => run.mutate({ action: "assign" })}>Assign nearest rider</Button><p className="self-center text-sm text-muted">Or wait: riders can accept it from their app.</p></>}
-          {["PRESCRIPTION_REVIEW", "PENDING", "PRESCRIPTION_APPROVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "RIDER_ASSIGNED"].includes(o.status) && <Button variant="secondary" onClick={() => setMode("reject")}>Reject / cancel…</Button>}
+        <div className="flex flex-wrap items-center gap-1.5"><OrderStatusBadge status={o.status} />{o.deliveryType === "PRIORITY" && <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Priority</StatusBadge>}</div>
+      </div>
+      {urgent && <p className="flex items-center gap-1.5 text-sm font-bold text-warn"><Clock className="size-4" aria-hidden /> Waiting {waitingMin} minutes. Please answer soon.</p>}
+      {o.patient.allergies && <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Allergy: {o.patient.allergies}</StatusBadge>}
+
+      <ul className="divide-y divide-line text-sm">{o.items.map((i) => <li key={i.id} className="flex justify-between gap-3 py-2"><span>{i.name} <span className="t-caption">{i.strength}</span> ×{i.quantity} {i.prescriptionRequired && <Badge tone="amber">Rx</Badge>}</span><b>{inr(i.unitPrice * i.quantity)}</b></li>)}</ul>
+      <p className="flex justify-between font-bold"><span>{o.paymentMethod === "COD" ? "Cash on delivery" : o.paymentMethod} · {o.paymentStatus === "PAID" ? "paid" : o.paymentMethod === "COD" && o.paymentStatus === "PENDING" ? "to collect" : o.paymentStatus.replace("_", " ").toLowerCase()}</span><span>{inr(o.total)}</span></p>
+
+      {o.prescription && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" className="min-h-11" onClick={() => view(o.prescription!.id)}><FileText className="size-4" aria-hidden /> View prescription</Button>
+          <StatusBadge tone={o.prescription.status === "APPROVED" ? "success" : "warning"}>{o.prescription.status.replace("_", " ").toLowerCase()}</StatusBadge>
         </div>
       )}
+      {err && <p role="alert" className="text-sm font-semibold text-emergency">{err}</p>}
+
+      {o.status === "PRESCRIPTION_REVIEW" && <Notice tone="amber">Check the doctor&apos;s name, date and every medicine against the order. Never swap a medicine on your own. If it is unclear, ask for a clearer copy.</Notice>}
+      {o.pickupOtp && <Notice tone="blue" title="Pickup code for the delivery partner">Give this code when they collect the parcel: <b className="text-2xl tracking-widest">{o.pickupOtp}</b></Notice>}
+      {o.rider && <p className="flex flex-wrap items-center gap-2 text-sm"><b>Delivery partner:</b> {o.rider.name} <a href={`tel:${o.rider.mobile}`} className="tap inline-flex items-center gap-1 font-semibold text-brand-700"><Phone className="size-4" aria-hidden /> Call</a></p>}
+      {o.status === "CANCELLED" && o.note && <p className="t-support">Reason: {o.note}</p>}
+      {run.isError && !dialog && <Notice tone="red">{(run.error as Error).message}</Notice>}
+
+      <div className="flex flex-wrap gap-2">
+        {o.status === "PRESCRIPTION_REVIEW" && <><Button loading={run.isPending && run.variables?.decision === "APPROVE"} onClick={() => run.mutate({ action: "review", decision: "APPROVE" })}>Approve</Button><Button variant="secondary" onClick={() => setDialog("clarify")}>Need clarification</Button></>}
+        {(o.status === "PENDING" || o.status === "PRESCRIPTION_APPROVED") && <Button loading={run.isPending} onClick={() => step("confirm")}>Accept order</Button>}
+        {o.status === "CONFIRMED" && <Button loading={run.isPending} onClick={() => step("prepare")}>Start preparing</Button>}
+        {o.status === "PREPARING" && <Button loading={run.isPending} onClick={() => step("ready")}>Ready for pickup</Button>}
+        {o.status === "READY_FOR_PICKUP" && <><Button loading={run.isPending} onClick={() => run.mutate({ action: "assign" })}>Find a delivery partner</Button><p className="t-caption self-center">Or wait: partners can accept it in their app.</p></>}
+        {cancellable && <Button variant="danger-outline" onClick={() => setDialog("reject")}>{o.status === "PRESCRIPTION_REVIEW" || o.status === "PENDING" ? "Reject" : "Cancel order"}</Button>}
+      </div>
+
+      <ConfirmationDialog open={dialog === "reject"} onClose={closeDialog} tone="danger"
+        title={o.status === "PRESCRIPTION_REVIEW" || o.status === "PENDING" ? `Reject order ${o.code}?` : `Cancel order ${o.code}?`}
+        description="The customer is told right away, and any online payment is refunded. This cannot be undone."
+        confirmLabel={o.status === "PRESCRIPTION_REVIEW" || o.status === "PENDING" ? "Yes, reject" : "Yes, cancel order"} cancelLabel="Go back"
+        confirmDisabled={note.trim().length < 3} loading={run.isPending} error={run.isError ? (run.error as Error).message : undefined}
+        onConfirm={() => run.mutate(o.status === "PRESCRIPTION_REVIEW" ? { action: "review", decision: "REJECT", note } : { action: "reject", note })}>
+        <Input label="Reason (the customer will read this)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Out of stock today" />
+      </ConfirmationDialog>
+      <ConfirmationDialog open={dialog === "clarify"} onClose={closeDialog} title="Ask for a clearer prescription"
+        description="The customer gets a message and can upload a better photo. The order stays open."
+        confirmLabel="Send request" cancelLabel="Go back" confirmDisabled={note.trim().length < 3} loading={run.isPending} error={run.isError ? (run.error as Error).message : undefined}
+        onConfirm={() => run.mutate({ action: "review", decision: "CLARIFY", note })}>
+        <Input label="What is unclear?" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. The doctor's signature is cut off" />
+      </ConfirmationDialog>
     </Card>
   );
 }
@@ -98,10 +128,15 @@ export function usePharmacyOrders() {
 export function OrderQueue({ group, limit }: { group: Group; limit?: number }) {
   const q = usePharmacyOrders();
   const inGroup = (o: PharmacyOrder) => (GROUPS[group] as readonly string[]).includes(o.status);
+  const [title, body] = EMPTY[group];
   return (
-    <QueryBoundary query={q} skeleton={<SkeletonList rows={2} height="h-48" />} isEmpty={(d) => d.filter(inGroup).length === 0}
-      empty={<EmptyState title={EMPTY[group]} body={group === "new" ? "New orders appear here automatically." : undefined} />}>
-      {(list) => <div className="space-y-3">{list.filter(inGroup).slice(0, limit).map((o) => <OrderCard key={o.id} o={o} />)}</div>}
+    <QueryBoundary query={q} skeleton={<SkeletonList rows={2} lines={4} />} isEmpty={(d) => d.filter(inGroup).length === 0} empty={<EmptyState title={title} body={body} />}>
+      {(list) => (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {list.filter(inGroup).slice(0, limit).map((o) => <OrderCard key={o.id} o={o} />)}
+        </div>
+      )}
     </QueryBoundary>
   );
 }
+

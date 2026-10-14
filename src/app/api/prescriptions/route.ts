@@ -1,6 +1,6 @@
 import { prescriptionMetaSchema } from "@/lib/validation";
 import { badRequest, handle, limit, requireUser, validate } from "@/server/http";
-import { listPrescriptions, storePrescription } from "@/server/services/prescriptions";
+import { listPrescriptions, storePrescription } from "@/server/features/prescriptions/prescriptions.service";
 import { db } from "@/server/store";
 
 export const GET = handle(async () => {

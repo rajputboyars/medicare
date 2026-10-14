@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Step-by-step DawaDost customer guide for account setup, medicine search, prescriptions, checkout, orders, and privacy.">
+  <title>DawaDost | Customer Guide</title>
+  <style>
+    :root {
+      color-scheme: light; --bg:#f6f8f6; --surface:#fff; --ink:#172b2a; --muted:#5c706e; --line:#dce7e4;
+      --brand:#0d746b; --brand-dark:#07564f; --brand-soft:#e7f5f2; --gold:#9a5b08; --gold-soft:#fff5df;
+      --blue:#315a8b; --blue-soft:#edf4ff; --shadow:0 12px 34px rgb(23 43 42 / 7%);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; scroll-behavior:smooth;
+    }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);line-height:1.62} a{color:var(--brand-dark)}
+    .page{width:min(100% - 32px,1040px);margin:auto;padding:28px 0 64px}
+    .hero{position:relative;overflow:hidden;padding:clamp(26px,6vw,58px);border-radius:28px;color:white;background:radial-gradient(ellipse at 95% 0%,#37a99c 0,transparent 35%),linear-gradient(130deg,#084d48,#0c766b 68%,#169284);box-shadow:var(--shadow)}
+    .hero:after{content:"✚";position:absolute;right:6%;bottom:-60px;color:rgb(255 255 255 / 9%);font-size:clamp(160px,30vw,300px);line-height:1;font-weight:800;pointer-events:none}
+    .brand{display:inline-flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em}.mark{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:white;color:var(--brand);font-size:23px}
+    .kicker{margin:26px 0 8px;color:#bce8df;font-size:.78rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+    h1{max-width:760px;margin:0;font-size:clamp(2.2rem,7vw,4.3rem);letter-spacing:-.055em;line-height:1.04}
+    .hero p{max-width:680px;margin:18px 0 0;color:#e4f4f1;font-size:clamp(1rem,2.5vw,1.2rem)}
+    .links{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;position:relative;z-index:1}.links a{display:inline-flex;min-height:44px;align-items:center;border:1px solid rgb(255 255 255 / 45%);border-radius:999px;padding:8px 16px;color:white;text-decoration:none;font-weight:700}.links a:hover{background:rgb(255 255 255 / 13%)}
+    .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 34px}.fact,.card,.tile,.step{border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+    .fact{padding:16px 18px}.fact strong{display:block;color:var(--brand-dark);font-size:1.12rem}.fact span{color:var(--muted);font-size:.9rem}
+    .section{margin-top:42px;scroll-margin-top:20px}.heading{display:flex;align-items:flex-start;gap:13px;margin-bottom:16px}.num{flex:0 0 38px;display:grid;place-items:center;width:38px;height:38px;border-radius:13px;background:var(--brand);color:white;font-weight:800}
+    h2{margin:0;font-size:clamp(1.35rem,3vw,1.8rem);letter-spacing:-.03em;line-height:1.2}h3{margin:0;font-size:1.06rem;line-height:1.35}.heading p{margin:5px 0 0;color:var(--muted)}
+    .card{padding:20px;box-shadow:0 4px 18px rgb(23 43 42 / 3%)}.grid,.steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.tile,.step{padding:17px;min-width:0}.tile p,.card p,.step p{margin:6px 0 0;color:var(--muted)}
+    .step{counter-increment:s}.steps{counter-reset:s}.step:before{content:counter(s,decimal-leading-zero);display:block;margin-bottom:12px;color:var(--brand);font-size:.8rem;font-weight:900;letter-spacing:.08em}
+    .callout{margin-top:14px;padding:16px 18px;border-left:4px solid var(--gold);border-radius:12px;background:var(--gold-soft)}.callout p{margin:0;color:#65450f}.callout.info{border-color:var(--blue);background:var(--blue-soft)}.callout.info p{color:#304e73}
+    ul.clean{margin:10px 0 0;padding-left:1.2rem;color:var(--muted)}ul.clean li+li{margin-top:6px}.tag{display:inline-block;margin-bottom:10px;padding:4px 9px;border-radius:999px;background:var(--brand-soft);color:var(--brand-dark);font-size:.75rem;font-weight:800}
+    .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.tile{padding:18px}.tile h3{margin-top:1px}
+    footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}footer p{margin:0}footer p+p{margin-top:6px}
+    @media(max-width:680px){.page{width:min(100% - 22px,1040px);padding-top:11px}.hero{border-radius:20px}.facts,.grid,.steps,.tiles{grid-template-columns:1fr}.fact{padding:12px 15px}.section{margin-top:32px}.card{padding:16px}}
+    @media print{body{background:white;font-size:10.5pt}.page{width:100%;padding:0}.hero{padding:24px;box-shadow:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}.hero:after,.links{display:none}.facts{margin-bottom:20px}.section{margin-top:23px;break-inside:avoid}.card,.step,.tile,.fact{box-shadow:none;break-inside:avoid}a{color:inherit;text-decoration:none}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <div class="brand"><span class="mark" aria-hidden="true">✚</span><span>DawaDost <span style="font-weight:500">Customer</span></span></div>
+    <p class="kicker">Customer handbook</p>
+    <h1>Find the medicine. Get it delivered.</h1>
+    <p>A practical walkthrough for creating an account, finding a nearby pharmacy, ordering medicines, tracking delivery, and managing your health-related preferences.</p>
+    <nav class="links" aria-label="Quick links"><a href="#account">Create account</a><a href="#shopping">Find medicines</a><a href="#prescription">Prescription orders</a><a href="#tracking">Track delivery</a><a href="http://localhost:3000/">Open local app</a></nav>
+  </header>
+  <div class="facts">
+    <div class="fact"><strong>Search nearby</strong><span>Availability and offers depend on your delivery pincode.</span></div>
+    <div class="fact"><strong>Prescription checked</strong><span>A pharmacist reviews prescription medicines before preparation.</span></div>
+    <div class="fact"><strong>Track each step</strong><span>Your order page shows status, estimate, and delivery code.</span></div>
+  </div>
+
+  <section class="section" id="account">
+    <div class="heading"><span class="num">1</span><div><h2>Create an account</h2><p>Register at <a href="http://localhost:3000/register">/register</a>.</p></div></div>
+    <div class="card">
+      <div class="grid">
+        <article class="tile"><h3>Name and mobile</h3><p>Your name and a valid 10-digit mobile number are required. Order updates are sent to the mobile number.</p></article>
+        <article class="tile"><h3>Email and password</h3><p>Email is optional. Password must be at least 8 characters and include a letter and a number.</p></article>
+        <article class="tile"><h3>Health-data consent</h3><p>Consent is required to process prescriptions and orders for fulfilment and share what is needed with the pharmacy. You can withdraw this in Profile → Privacy.</p></article>
+      </div>
+      <p class="callout info">You can browse and build a cart without an account, but signing in is required to place and track orders, save addresses, upload prescriptions, and use family/repeat-order features.</p>
+      <p style="margin-top:14px"><a href="http://localhost:3000/login">Already registered? Sign in</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="shopping">
+    <div class="heading"><span class="num">2</span><div><h2>Search for a medicine</h2><p>Start from Find Medicine or the home page’s nearby products.</p></div></div>
+    <div class="steps">
+      <article class="step"><h3>Set your delivery area</h3><p>Choose the location/pincode so the app can search pharmacies serving that area.</p></article>
+      <article class="step"><h3>Search and filter</h3><p>Search by medicine, generic name, brand, or health need. Filter by category, brand, prescription requirement, maximum price, and nearby availability.</p></article>
+      <article class="step"><h3>Compare offers</h3><p>Sort by fastest, cheapest, nearest, or a preferred pharmacy. Offers can show pharmacy, price, availability, and estimated time.</p></article>
+      <article class="step"><h3>Add to your cart</h3><p>Choose a pharmacy offer and add medicines to the cart. The cart is associated with a pharmacy; add items from the same pharmacy for one checkout.</p></article>
+    </div>
+    <div class="callout"><p><b>Can’t find it?</b> Use “Find this medicine for me” to ask nearby verified pharmacies. Replies can indicate availability, an alternative, out of stock, or an expected restock time.</p></div>
+  </section>
+
+  <section class="section" id="prescription">
+    <div class="heading"><span class="num">3</span><div><h2>Upload a prescription when needed</h2><p>Prescription medicines cannot proceed to checkout without an attached prescription.</p></div></div>
+    <div class="card">
+      <ol class="clean">
+        <li>Sign in and open <a href="http://localhost:3000/upload-prescription">Upload Prescription</a>.</li>
+        <li>Add a prescription photo or PDF; optionally select which family member it is for and enter medicine names to help find them.</li>
+        <li>Give permission for the pharmacist to view the prescription, then upload it.</li>
+        <li>Choose the uploaded prescription in the cart/checkout. The pharmacist reviews it before preparing.</li>
+        <li>Check the prescription status and any review note on the upload page. If a clearer copy is requested, replace it from the order page.</li>
+      </ol>
+      <div class="callout info"><p>Uploaded prescriptions are intended for the pharmacy fulfilling the order. The app states that delivery partners do not see prescription or medical details. The pharmacist may approve, reject with a reason, or ask for a clearer copy; medicines are not substituted automatically.</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="checkout">
+    <div class="heading"><span class="num">4</span><div><h2>Check out and place your order</h2><p>Sign in, provide delivery details, and review the quote before confirming.</p></div></div>
+    <div class="steps">
+      <article class="step"><h3>Review medicines and prescription</h3><p>Adjust quantities and remove items if needed. Attach a valid prescription for any Rx-required item.</p></article>
+      <article class="step"><h3>Choose who the order is for</h3><p>Select yourself or a family profile. Add family profiles in Profile → Family profiles.</p></article>
+      <article class="step"><h3>Select an address</h3><p>Choose a saved delivery address or add one with contact, house/area details, pincode, and a useful landmark.</p></article>
+      <article class="step"><h3>Select delivery and payment</h3><p>Choose normal or priority delivery if the pharmacy offers it. Select UPI, card, or cash on delivery. Wallet is not available yet.</p></article>
+      <article class="step"><h3>Review price and estimate</h3><p>Review item total, delivery fee, any applied offer, and the estimated delivery range. The estimate can change with stock, prescription review, and rider availability.</p></article>
+      <article class="step"><h3>Place order and pay if needed</h3><p>Place the order. For an unpaid online payment, open the order and use the payment action. The current local app describes this as a demo payment gateway.</p></article>
+    </div>
+  </section>
+
+  <section class="section" id="tracking">
+    <div class="heading"><span class="num">5</span><div><h2>Track and receive your delivery</h2><p>Find orders under My Orders and open an order for detailed progress.</p></div></div>
+    <div class="card">
+      <p>The order timeline can show order placed, prescription review/approval (when required), confirmed, pharmacy preparing, ready for pickup, rider assigned, picked up, out for delivery, and delivered.</p>
+      <ul class="clean">
+        <li>While active, the order page shows an estimated time range and its factors.</li>
+        <li>After a rider is assigned, you can see rider details and call the delivery partner.</li>
+        <li>Show the delivery code on the order page to the rider only when you receive the parcel. Do not share it earlier.</li>
+        <li>For COD, pay the exact amount shown by the order/rider.</li>
+        <li>After delivery, view/print the invoice, rate the pharmacy, repeat the order, or save medicines for a refill reminder.</li>
+      </ul>
+      <div class="callout"><p><b>Cancellation and refunds:</b> the interface says cancellation is free before rider pickup. For paid orders, refunds are shown as taking 3–5 working days to the original payment method. Available cancellation options depend on the order status.</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="more">
+    <div class="heading"><span class="num">6</span><div><h2>Useful customer features</h2><p>Manage repeat orders, family needs, and account preferences.</p></div></div>
+    <div class="tiles">
+      <article class="tile"><span class="tag">/repeat</span><h3>Repeat &amp; save medicines</h3><p>Repeat a completed order or create a saved medicine list for yourself or a family member, with a reminder interval and optional preferred pharmacy. Prescription medicines still go through review; the app does not auto-buy them.</p></article>
+      <article class="tile"><span class="tag">/family</span><h3>Family profiles</h3><p>Save a family member’s name, age, relationship, optional gender, blood group, allergies, current medicines, and preferred pharmacy for orders.</p></article>
+      <article class="tile"><span class="tag">/profile</span><h3>Profile &amp; support</h3><p>Manage addresses, English/Hindi language, large text, high contrast, consent, support tickets, and a downloadable copy of your account data.</p></article>
+    </div>
+  </section>
+
+  <section class="section" id="privacy">
+    <div class="heading"><span class="num">i</span><div><h2>Privacy and care reminders</h2><p>Use the app for fulfilment support, not emergency medical advice.</p></div></div>
+    <div class="card">
+      <ul class="clean">
+        <li>Only share prescription/health information needed to fulfil your request, and review privacy consent in Profile.</li>
+        <li>Pharmacies preparing an order can review its prescription; delivery partners do not see medical item details.</li>
+        <li>Do not share the delivery code until the rider is handing over the order.</li>
+        <li>The app is not an emergency service. For urgent health concerns, contact local emergency services or a qualified healthcare professional.</li>
+        <li>Availability, prices, delivery coverage, and estimated times depend on local pharmacy stock and service settings.</li>
+      </ul>
+    </div>
+  </section>
+  <footer><p><b>DawaDost Customer</b> · Customer onboarding and feature guide</p><p>Local app: <a href="http://localhost:3000/">Home</a> · <a href="http://localhost:3000/medicines">Find medicines</a> · <a href="http://localhost:3000/profile">Profile</a></p></footer>
+</main>
+</body>
+</html>

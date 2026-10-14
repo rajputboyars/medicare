@@ -58,7 +58,7 @@ ok("Find This Medicine For Me creates a request", fm.status === 200 && fm.data?.
 const preq = await call(owner.cookie, "GET", "/api/pharmacy/requests");
 const mine = preq.data?.find((r) => r.id === fm.data.id);
 ok("pharmacy sees the request", !!mine);
-ok("pharmacy replies available → customer notified", (await call(owner.cookie, "POST", `/api/pharmacy/requests/${fm.data.id}`, { response: "AVAILABLE" })).data?.status === "FOUND");
+ok("pharmacy replies available → customer notified", (await call(owner.cookie, "POST", `/api/pharmacy/requests/${fm.data.id}`, { response: "AVAILABLE", price: 120, availableQty: 5, prepMinutes: 15 })).data?.status === "FOUND");
 const my = await call(customer2.cookie, "GET", "/api/medicine-requests");
 ok("customer sees the replies (seeded out-of-stock + new available)", my.data?.find((r) => r.id === fm.data.id)?.responses?.some((x) => x.response === "AVAILABLE" && x.pharmacyName));
 

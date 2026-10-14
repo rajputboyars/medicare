@@ -13,7 +13,7 @@ export function validBatches(pharmacyId: string, medicineId: string, now = Date.
 export function stockFor(pharmacyId: string, medicineId: string) {
   const batches = validBatches(pharmacyId, medicineId);
   if (!batches.length) return undefined;
-  return { quantity: batches.reduce((s, b) => s + b.quantity, 0), sellingPrice: batches[0].sellingPrice, mrp: batches[0].mrp };
+  return { quantity: batches.reduce((s, b) => s + b.quantity, 0), sellingPrice: batches[0].sellingPrice, mrp: batches[0].mrp, updatedAt: batches.map((b) => b.updatedAt).sort().at(-1)! };
 }
 
 /** Takes stock FEFO across batches. Throws (and changes nothing) when any line cannot be fully reserved. */
@@ -27,6 +27,7 @@ export function reserve(pharmacyId: string, lines: { medicineId: string; quantit
     for (const b of validBatches(pharmacyId, l.medicineId)) {
       const take = Math.min(b.quantity, need);
       b.quantity -= take;
+      b.updatedAt = new Date().toISOString();
       need -= take;
       if (!need) break;
     }
@@ -37,6 +38,6 @@ export function reserve(pharmacyId: string, lines: { medicineId: string; quantit
 export function release(pharmacyId: string, lines: { medicineId: string; quantity: number }[]) {
   for (const l of lines) {
     const rows = db().inventory.filter((i) => i.pharmacyId === pharmacyId && i.medicineId === l.medicineId).sort((a, b) => Date.parse(b.expiry) - Date.parse(a.expiry));
-    if (rows[0]) rows[0].quantity += l.quantity;
+    if (rows[0]) { rows[0].quantity += l.quantity; rows[0].updatedAt = new Date().toISOString(); }
   }
 }

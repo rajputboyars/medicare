@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, patch } from "@/lib/api";
-import { Button, Card, ErrorState, Input, PageTitle, QueryBoundary, SkeletonList, Success } from "@/components/ui";
+import { Button, Card, ErrorState, Input, LinkButton, PageTitle, QueryBoundary, SkeletonList, Success } from "@/components/ui";
 import type { PlatformSettings } from "@/lib/types";
 
 const NUM: [keyof PlatformSettings, string, string][] = [
@@ -25,7 +25,7 @@ export default function AdminSettings() {
   });
   return (
     <>
-      <PageTitle title="Settings" subtitle="Pricing and payout rules. Changes apply to new orders only." />
+      <PageTitle title="Settings" subtitle="Pricing and payout rules. Changes apply to new orders only." action={<LinkButton href="/admin/audit" variant="secondary">Audit log</LinkButton>} />
       <QueryBoundary query={q} skeleton={<SkeletonList rows={4} height="h-16" />}>
         {() => (
           <Card className="max-w-2xl space-y-4">

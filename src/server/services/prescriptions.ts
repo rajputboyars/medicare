@@ -41,7 +41,10 @@ export function canAccessPrescription(user: SessionUser, rx: Prescription): bool
   if (rx.userId === user.id || user.role === "SUPER_ADMIN") return true;
   if (user.role === "PHARMACIST" || user.role === "PHARMACY_ADMIN") {
     const linked = db().orders.some((o) => o.prescriptionId === rx.id && o.pharmacyId === user.partnerId);
-    return linked || rx.pharmacyId === user.partnerId || (rx.source === "QUICK_ORDER" && !rx.pharmacyId);
+    // Files a customer chose to share with nearby pharmacies when asking "Find My Medicine"
+    const ph = db().pharmacies.find((p) => p.id === user.partnerId);
+    const sharedWithMe = !!ph && db().medicineRequests.some((r) => (r.photoRxId === rx.id || r.prescriptionId === rx.id) && ph.servicePincodes.includes(r.pincode));
+    return linked || sharedWithMe || rx.pharmacyId === user.partnerId || (rx.source === "QUICK_ORDER" && !rx.pharmacyId);
   }
   return false;
 }

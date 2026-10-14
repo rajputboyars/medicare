@@ -1,42 +1,53 @@
 "use client";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { ClipboardList, FileCheck2, PackageMinus, PackageCheck, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { inr } from "@/lib/pricing";
 import { OrderQueue } from "@/components/pharmacy/order-queue";
-import { Badge, Notice, PageTitle, QueryBoundary, SkeletonList, Stat } from "@/components/ui";
-import type { Pharmacy } from "@/lib/types";
+import type { PharmacyStats } from "./layout";
+import { DashboardMetricCard, OperationalAlert, PageTitle, QueryBoundary, SectionHeader, SkeletonMetric, StatusBadge } from "@/components/ui";
+import type { MetricTone } from "@/components/ui/dashboard-metric-card";
 
-interface Stats { pharmacy: Pharmacy; toReview: number; newOrders: number; inProgress: number; deliveredToday: number; revenueToday: number; revenueTotal: number; lowStock: number; openRequests: number }
+const tone = (n: number, danger = false): MetricTone => (n > 0 ? (danger ? "danger" : "attention") : "neutral");
 
+/** Operational first: what needs an answer right now. Numbers and charts live in Reports. */
 export default function PharmacyDashboard() {
-  const q = useQuery({ queryKey: ["pharmacy-dashboard"], queryFn: () => api<Stats>("/api/pharmacy/dashboard"), refetchInterval: 20_000 });
+  const q = useQuery({ queryKey: ["pharmacy-dashboard"], queryFn: () => api<PharmacyStats>("/api/pharmacy/dashboard"), refetchInterval: 20_000 });
   return (
-    <>
-      <QueryBoundary query={q} skeleton={<SkeletonList rows={2} height="h-24" />}>
-        {(s) => (
-          <>
-            <PageTitle title={s.pharmacy.name} subtitle={`Drug licence ${s.pharmacy.drugLicense}`} action={<Badge tone={s.pharmacy.verification === "VERIFIED" ? "green" : "amber"}>{s.pharmacy.verification.toLowerCase()}</Badge>} />
-            {s.pharmacy.verification !== "VERIFIED" && <div className="mb-4"><Notice tone="amber" title="Verification pending">You can set up inventory now. Customers can order once the platform team verifies your licence.</Notice></div>}
-            {!s.pharmacy.acceptingOrders && s.pharmacy.verification === "VERIFIED" && <div className="mb-4"><Notice tone="amber" title="You are not accepting orders">Turn this on in Settings.</Notice></div>}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Link href="/pharmacy/prescriptions"><Stat label="Prescriptions to verify" value={s.toReview} tone={s.toReview ? "warn" : undefined} /></Link>
-              <Link href="/pharmacy/orders"><Stat label="New orders" value={s.newOrders} tone={s.newOrders ? "warn" : undefined} /></Link>
-              <Stat label="In progress" value={s.inProgress} />
-              <Stat label="Delivered today" value={s.deliveredToday} />
-              <Stat label="Revenue today" value={inr(s.revenueToday)} />
-              <Stat label="Revenue (all delivered)" value={inr(s.revenueTotal)} />
-              <Link href="/pharmacy/inventory"><Stat label="Low-stock alerts" value={`${s.lowStock} items`} tone={s.lowStock ? "warn" : undefined} /></Link>
-              <Link href="/pharmacy/requests"><Stat label="Customers asking for a medicine" value={`${s.openRequests} open`} tone={s.openRequests ? "warn" : undefined} /></Link>
+    <QueryBoundary query={q} skeleton={<div className="grid grid-cols-2 gap-3 lg:grid-cols-5"><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /><SkeletonMetric /></div>}>
+      {(s) => (
+        <>
+          <PageTitle title={s.pharmacy.name} subtitle={`Drug licence ${s.pharmacy.drugLicense}`}
+            action={<StatusBadge tone={s.pharmacy.verification === "VERIFIED" ? "success" : "warning"}>{s.pharmacy.verification === "VERIFIED" ? "Verified pharmacy" : `Verification ${s.pharmacy.verification.toLowerCase()}`}</StatusBadge>} />
+
+          <div className="mb-5 space-y-3 empty:hidden">
+            {s.pharmacy.verification !== "VERIFIED" && <OperationalAlert severity="warning" title="Your pharmacy is waiting for verification" description="You can set up your stock now. Customers can order once the DawaDost team verifies your licence." />}
+            {!s.pharmacy.acceptingOrders && s.pharmacy.verification === "VERIFIED" && <OperationalAlert severity="critical" title="You are not accepting orders" description="Customers cannot order from you right now." action={{ label: "Turn on", href: "/pharmacy/settings" }} />}
+          </div>
+
+          <section aria-labelledby="now"><SectionHeader id="now" title="Needs your attention" />
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+              <DashboardMetricCard href="/pharmacy/orders" icon={<ClipboardList />} label="New orders" value={s.newOrders} tone={tone(s.newOrders)} hint={s.newOrders ? "Waiting for you to accept" : "All answered"} />
+              <DashboardMetricCard href="/pharmacy/prescriptions" icon={<FileCheck2 />} label="Prescription reviews" value={s.toReview} tone={tone(s.toReview)} hint={s.toReview ? "Please verify" : "None waiting"} />
+              <DashboardMetricCard href="/pharmacy/requests" icon={<Search />} label="Medicine requests" value={s.openRequests} tone={tone(s.openRequests)} hint={s.openRequests ? "Customers need an answer" : "None open"} />
+              <DashboardMetricCard href="/pharmacy/inventory" icon={<PackageMinus />} label="Low stock" value={s.lowStock} tone={tone(s.lowStock)} hint={s.lowStock ? "Restock soon" : "Stock looks fine"} />
+              <DashboardMetricCard href="/pharmacy/orders" icon={<PackageCheck />} label="Ready for pickup" value={s.readyForPickup} tone={s.readyForPickup ? "success" : "neutral"} hint={s.readyForPickup ? "Waiting for a delivery partner" : "None waiting"} />
             </div>
-          </>
-        )}
-      </QueryBoundary>
-      <h2 className="mb-3 mt-8 text-xl font-extrabold">Needs your action</h2>
-      <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">Prescriptions to verify</h3>
-      <OrderQueue group="review" limit={3} />
-      <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-muted">New orders</h3>
-      <OrderQueue group="new" limit={3} />
-    </>
+          </section>
+
+          <section aria-labelledby="today" className="mt-6"><SectionHeader id="today" title="Today" href="/pharmacy/reports" linkLabel="Reports" />
+            <div className="grid grid-cols-3 gap-3">
+              <DashboardMetricCard label="In progress" value={s.inProgress} />
+              <DashboardMetricCard label="Delivered today" value={s.deliveredToday} />
+              <DashboardMetricCard label="Sales today" value={inr(s.revenueToday)} />
+            </div>
+          </section>
+      <div className="mt-8 grid gap-8">
+        <section aria-labelledby="rx-feed"><SectionHeader id="rx-feed" title="Prescriptions to review" href="/pharmacy/prescriptions" /><OrderQueue group="review" limit={2} /></section>
+        <section aria-labelledby="new-feed"><SectionHeader id="new-feed" title="New orders" href="/pharmacy/orders" /><OrderQueue group="new" limit={2} /></section>
+      </div>
+        </>
+      )}
+    </QueryBoundary>
   );
 }

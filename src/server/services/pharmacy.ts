@@ -27,7 +27,7 @@ export function listInventory(user: SessionUser) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function upsertInventory(user: SessionUser, input: Omit<PharmacyInventory, "id" | "pharmacyId">, id?: string) {
+export function upsertInventory(user: SessionUser, input: Omit<PharmacyInventory, "id" | "pharmacyId" | "updatedAt">, id?: string) {
   const p = pharmacyOf(user);
   const d = db();
   if (!d.medicines.some((m) => m.id === input.medicineId)) throw badRequest("Unknown medicine");
@@ -35,12 +35,12 @@ export function upsertInventory(user: SessionUser, input: Omit<PharmacyInventory
     const row = d.inventory.find((i) => i.id === id);
     if (!row) throw notFound();
     if (row.pharmacyId !== p.id) throw forbidden();
-    Object.assign(row, input);
+    Object.assign(row, input, { updatedAt: new Date().toISOString() });
     return row;
   }
   const existing = d.inventory.find((i) => i.pharmacyId === p.id && i.medicineId === input.medicineId && i.batch === input.batch);
-  if (existing) { Object.assign(existing, input); return existing; }
-  const row: PharmacyInventory = { id: uid("inv"), pharmacyId: p.id, ...input };
+  if (existing) { Object.assign(existing, input, { updatedAt: new Date().toISOString() }); return existing; }
+  const row: PharmacyInventory = { id: uid("inv"), pharmacyId: p.id, ...input, updatedAt: new Date().toISOString() };
   d.inventory.push(row);
   return row;
 }
@@ -52,6 +52,7 @@ export function quickStockUpdate(user: SessionUser, id: string, quantity: number
   if (row.pharmacyId !== p.id) throw forbidden();
   if (!Number.isInteger(quantity) || quantity < 0 || quantity > 100000) throw badRequest("Enter a valid quantity");
   row.quantity = quantity;
+  row.updatedAt = new Date().toISOString();
   return row;
 }
 
@@ -76,8 +77,9 @@ export function bulkUploadCsv(user: SessionUser, csv: string) {
     const parsed = inventoryItemSchema.safeParse({ medicineId: med.id, batch: cols[1], expiry: cols[2], mrp: cols[3], sellingPrice: cols[4], quantity: cols[5], lowStockThreshold: cols[6] || 10 });
     if (!parsed.success) return errors.push({ row: line, error: parsed.error.issues[0].message });
     const existing = d.inventory.find((i) => i.pharmacyId === p.id && i.medicineId === med.id && i.batch === parsed.data.batch);
-    if (existing) Object.assign(existing, parsed.data);
-    else d.inventory.push({ id: uid("inv"), pharmacyId: p.id, ...parsed.data });
+    const stamp = new Date().toISOString();
+    if (existing) Object.assign(existing, parsed.data, { updatedAt: stamp });
+    else d.inventory.push({ id: uid("inv"), pharmacyId: p.id, ...parsed.data, updatedAt: stamp });
     imported++;
   });
   audit(user, "INVENTORY_BULK_UPLOAD", "Pharmacy", p.id, { imported, errors: errors.length });
@@ -96,6 +98,7 @@ export function pharmacyStats(user: SessionUser) {
   return {
     pharmacy: p,
     toReview: orders.filter((o) => o.status === "PRESCRIPTION_REVIEW").length,
+    readyForPickup: orders.filter((o) => o.status === "READY_FOR_PICKUP" || o.status === "RIDER_ASSIGNED").length,
     newOrders: orders.filter((o) => ["PENDING", "PRESCRIPTION_APPROVED"].includes(o.status)).length,
     inProgress: orders.filter((o) => ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "RIDER_ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(o.status)).length,
     deliveredToday: today.length,

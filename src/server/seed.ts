@@ -114,7 +114,7 @@ export function buildSeed(): Db {
       inventory.push({
         id: `inv_${inventory.length + 1}`, pharmacyId: p.id, medicineId: m.id, batch: `B${Math.floor(r() * 9000 + 1000)}`,
         expiry: daysAhead(120 + Math.floor(r() * 500)), mrp: m.mrp, sellingPrice: Math.round(m.mrp * (0.88 + r() * 0.1)),
-        quantity: r() < 0.12 ? Math.floor(r() * 6) : 25 + Math.floor(r() * 80), lowStockThreshold: 10,
+        quantity: r() < 0.12 ? Math.floor(r() * 6) : 25 + Math.floor(r() * 80), lowStockThreshold: 10, updatedAt: hoursAgo(0.3 + r() * 70),
       });
     }
   }
@@ -122,7 +122,7 @@ export function buildSeed(): Db {
     const row = inventory.find((i) => i.pharmacyId === phId && i.medicineId === medId);
     const med = medicines.find((m) => m.id === medId)!;
     if (row) row.quantity = Math.max(row.quantity, qty);
-    else inventory.push({ id: `inv_${inventory.length + 1}`, pharmacyId: phId, medicineId: medId, batch: "B1001", expiry: daysAhead(300), mrp: med.mrp, sellingPrice: Math.round(med.mrp * 0.92), quantity: qty, lowStockThreshold: 10 });
+    else inventory.push({ id: `inv_${inventory.length + 1}`, pharmacyId: phId, medicineId: medId, batch: "B1001", expiry: daysAhead(300), mrp: med.mrp, sellingPrice: Math.round(med.mrp * 0.92), quantity: qty, lowStockThreshold: 10, updatedAt: hoursAgo(1.5) });
   };
   for (const id of [MED.METFORMIN, MED.TELMISARTAN, MED.AMLODIPINE, MED.THYRONORM, MED.PARACETAMOL, MED.CROCIN, MED.ORS, MED.CETIRIZINE, MED.VITAMIN_D, MED.IBUPROFEN]) forceStock("ph_1", id, 80);
   for (const id of [MED.METFORMIN, MED.PARACETAMOL, MED.ORS, MED.CETIRIZINE, MED.VITAMIN_D]) forceStock("ph_2", id, 60);
@@ -255,8 +255,9 @@ export function buildSeed(): Db {
   ];
 
   const requests: T.MedicineRequest[] = [
-    { id: "req_1", userId: "u_2", medicineQuery: "Liv-52 syrup", mobile: "9876500002", pincode: "261001", status: "OPEN", createdAt: hoursAgo(2) },
-    { id: "req_2", userId: "u_3", medicineQuery: "Digene gel", mobile: "9876500003", pincode: "261121", status: "FOUND", createdAt: hoursAgo(20) },
+    { id: "req_1", userId: "u_2", medicineQuery: "Liv-52 syrup", strength: "200 ml", quantity: 2, mobile: "9876500002", pincode: "261001", status: "OPEN", createdAt: hoursAgo(2) },
+    { id: "req_3", userId: "u_5", medicineQuery: "Cremaffin syrup", strength: "225 ml", quantity: 1, mobile: "9876500005", pincode: "261001", status: "OPEN", createdAt: hoursAgo(0.2) },
+    { id: "req_2", userId: "u_3", medicineQuery: "Digene gel", strength: "200 ml", quantity: 1, mobile: "9876500003", pincode: "261121", status: "FOUND", createdAt: hoursAgo(20) },
   ];
 
   return {
@@ -268,7 +269,7 @@ export function buildSeed(): Db {
     medicineRequests: requests,
     medicineRequestResponses: [
       { id: "rr_1", requestId: "req_1", pharmacyId: "ph_2", response: "OUT_OF_STOCK", restockEta: "2 days", at: hoursAgo(1.5) },
-      { id: "rr_2", requestId: "req_2", pharmacyId: "ph_3", response: "AVAILABLE", at: hoursAgo(18) },
+      { id: "rr_2", requestId: "req_2", pharmacyId: "ph_3", response: "AVAILABLE", price: 108, availableQty: 6, prepMinutes: 15, at: hoursAgo(18) },
     ],
     reviews: [{ id: "rv_1", userId: "u_1", pharmacyId: "ph_1", orderId: "ord_1", rating: 5, comment: "Medicines reached before evening.", createdAt: hoursAgo(24 * 29) }],
     notifications: [{ id: "n_1", userId: "u_1", event: "ORDER_CONFIRMED", channels: ["SMS", "PUSH"], title: "Order confirmed", body: "Your order MC-51907 is confirmed by Shree Ram Medical Store.", read: false, createdAt: hoursAgo(1) }],

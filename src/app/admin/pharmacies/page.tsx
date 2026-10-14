@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { patch } from "@/lib/api";
 import { EntityTable, money, status, type Row } from "@/components/admin/entity-table";
-import { Button, ErrorState, Input } from "@/components/ui";
+import { Button, ErrorState, Input, LinkButton } from "@/components/ui";
 
 export default function AdminPharmacies() {
   const qc = useQueryClient();
@@ -15,7 +15,7 @@ export default function AdminPharmacies() {
   });
   return (
     <>
-      <EntityTable title="Pharmacies" subtitle="All partner pharmacies. Suspending a pharmacy stops it from receiving orders immediately." queryKey="pharmacies" url="/api/admin/partners/pharmacies"
+      <EntityTable headerAction={<LinkButton href="/admin/verification" variant="secondary">Verification queue</LinkButton>} title="Pharmacies" subtitle="All partner pharmacies. Suspending a pharmacy stops it from receiving orders immediately." queryKey="pharmacies" url="/api/admin/partners/pharmacies"
         columns={[{ key: "name", label: "Pharmacy", className: "font-semibold" }, { key: "drugLicense", label: "Drug licence" }, { key: "pincode", label: "Pincode" }, { key: "verification", label: "Status", render: status },
           { key: "orders", label: "Orders" }, { key: "revenue", label: "Revenue", render: money }, { key: "stockLines", label: "Stock lines" }, { key: "rating", label: "Rating" }]}
         rowAction={(r: Row) => r.verification === "VERIFIED"

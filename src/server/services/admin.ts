@@ -7,6 +7,34 @@ import { requestResponses } from "./requests";
 
 const startOfDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
+export interface AttentionItem { id: string; severity: "info" | "warning" | "critical"; title: string; description: string; href: string; actionLabel: string }
+
+/** Things an operator should look at now, most urgent first. Plain sentences, each with a place to act. */
+export function attentionItems(now = Date.now()): AttentionItem[] {
+  const d = db();
+  const mins = (iso: string) => Math.round((now - Date.parse(iso)) / 60_000);
+  const items: AttentionItem[] = [];
+  const stuckPending = d.orders.filter((o) => ["PENDING", "PRESCRIPTION_REVIEW"].includes(o.status) && mins(o.createdAt) > 20);
+  if (stuckPending.length) {
+    const oldest = Math.max(...stuckPending.map((o) => mins(o.createdAt)));
+    items.push({ id: "stuck-pending", severity: oldest > 60 ? "critical" : "warning", title: `${stuckPending.length} order${stuckPending.length === 1 ? " is" : "s are"} waiting for a pharmacy`, description: `The oldest has waited ${oldest} minutes. Call the pharmacy or ask the customer to wait.`, href: "/admin/orders", actionLabel: "See orders" });
+  }
+  const noRider = d.orders.filter((o) => o.status === "READY_FOR_PICKUP" && !o.deliveryPartnerId && mins(o.statusHistory.at(-1)?.at ?? o.createdAt) > 15);
+  if (noRider.length) items.push({ id: "no-rider", severity: "critical", title: `${noRider.length} ready order${noRider.length === 1 ? " has" : "s have"} no delivery partner`, description: "They have been ready for more than 15 minutes. Check that riders are online.", href: "/admin/riders", actionLabel: "See riders" });
+  const unanswered = d.medicineRequests.filter((r) => r.status === "OPEN" && mins(r.createdAt) > 30 && !d.medicineRequestResponses.some((x) => x.requestId === r.id));
+  if (unanswered.length) items.push({ id: "unanswered", severity: "warning", title: `${unanswered.length} medicine request${unanswered.length === 1 ? " has" : "s have"} no reply`, description: "No pharmacy has answered for over 30 minutes.", href: "/admin/requests", actionLabel: "See requests" });
+  const pendingPh = d.pharmacies.filter((p) => p.verification === "PENDING").length;
+  if (pendingPh) items.push({ id: "pending-pharmacies", severity: "warning", title: `${pendingPh} pharmacy approval${pendingPh === 1 ? "" : "s"} waiting`, description: "Check the drug licence, then approve or reject with a reason.", href: "/admin/verification", actionLabel: "Review" });
+  const pendingRid = d.deliveryPartners.filter((p) => p.verification === "PENDING").length;
+  if (pendingRid) items.push({ id: "pending-riders", severity: "info", title: `${pendingRid} delivery partner${pendingRid === 1 ? "" : "s"} waiting for approval`, description: "They cannot take deliveries until approved.", href: "/admin/verification", actionLabel: "Review" });
+  const tickets = d.tickets.filter((t) => t.status !== "RESOLVED");
+  if (tickets.length) items.push({ id: "complaints", severity: tickets.some((t) => mins(t.createdAt) > 24 * 60) ? "critical" : "warning", title: `${tickets.length} open complaint${tickets.length === 1 ? "" : "s"}`, description: "Customers are waiting for an answer.", href: "/admin/complaints", actionLabel: "Open" });
+  const unsettled = d.orders.filter((o) => o.status === "DELIVERED" && !o.settlementId).length;
+  if (unsettled) items.push({ id: "unsettled", severity: "info", title: `${unsettled} delivered order${unsettled === 1 ? "" : "s"} not settled yet`, description: "Create settlements to pay the pharmacies.", href: "/admin/settlements", actionLabel: "Settle" });
+  const rank = { critical: 0, warning: 1, info: 2 };
+  return items.sort((a, b) => rank[a.severity] - rank[b.severity]);
+}
+
 export function adminStats() {
   const d = db();
   const today = d.orders.filter((o) => Date.parse(o.createdAt) >= startOfDay());
@@ -26,6 +54,8 @@ export function adminStats() {
     openRequests: d.medicineRequests.filter((r) => r.status === "OPEN").length,
     openTickets: d.tickets.filter((t) => t.status !== "RESOLVED").length,
     pendingSettlements: d.settlements.filter((s) => s.status !== "PAID").length,
+    pendingApprovals: d.pharmacies.filter((p) => p.verification === "PENDING").length + d.deliveryPartners.filter((p) => p.verification === "PENDING").length,
+    attention: attentionItems(),
   };
 }
 

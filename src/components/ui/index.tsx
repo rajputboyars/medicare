@@ -1,164 +1,101 @@
 "use client";
 import Link from "next/link";
 import clsx from "clsx";
-import { AlertTriangle, CheckCircle2, Inbox, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { forwardRef, useId } from "react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, Inbox, RefreshCw, ShieldCheck, WifiOff } from "lucide-react";
+import type { ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
+import { ApiClientError } from "@/lib/api";
+import { Button } from "./button";
+import { DashboardMetricCard } from "./dashboard-metric-card";
+import { SkeletonList } from "./skeleton-card";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "soft";
-const base = "inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-base font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
-const variants: Record<Variant, string> = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800",
-  secondary: "border-2 border-brand-600 bg-white text-brand-700 hover:bg-brand-50",
-  soft: "bg-brand-50 text-brand-800 hover:bg-brand-100",
-  ghost: "text-brand-700 hover:bg-brand-50",
-  danger: "bg-emergency text-white hover:bg-red-800",
-};
-
-export function Button({ variant = "primary", loading, className, children, disabled, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; loading?: boolean }) {
-  return (
-    <button {...rest} disabled={disabled || loading} aria-busy={loading || undefined} className={clsx(base, variants[variant], className)}>
-      {loading && <Loader2 className="size-5 animate-spin" aria-hidden />}
-      {children}
-    </button>
-  );
-}
-
-export function LinkButton({ href, variant = "primary", className, children, ...rest }: { href: string; variant?: Variant; className?: string; children: ReactNode } & Omit<React.ComponentProps<typeof Link>, "href" | "className">) {
-  return (
-    <Link href={href} {...rest} className={clsx(base, variants[variant], className)}>
-      {children}
-    </Link>
-  );
-}
+// Re-exports: import everything UI from "@/components/ui".
+export { Button, LinkButton, IconButton, buttonClass } from "./button";
+export type { ButtonVariant, ButtonSize } from "./button";
+export { Input, Select, Textarea, Toggle } from "./form";
+export { StatusBadge, AttentionBadge } from "./status-badge";
+export type { StatusTone } from "./status-badge";
+export { DashboardMetricCard } from "./dashboard-metric-card";
+export { OperationalAlert } from "./operational-alert";
+export { Skeleton, SkeletonCard, SkeletonMetric, SkeletonList } from "./skeleton-card";
+export { Modal } from "./modal";
+export { ConfirmationDialog } from "./confirmation-dialog";
+export { SearchBar } from "./search-bar";
+export { LazyMount } from "./lazy-mount";
 
 export function Card({ className, children, as: Tag = "div", ...rest }: { className?: string; children: ReactNode; as?: "div" | "section" | "article" | "li" } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <Tag {...rest} className={clsx("rounded-[1.25rem] border border-line bg-white p-4 shadow-soft sm:p-5", className)}>
+    <Tag {...rest} className={clsx("rounded-card border border-line bg-surface p-4 shadow-soft sm:p-5", className)}>
       {children}
     </Tag>
   );
 }
 
-type Tone = "green" | "amber" | "red" | "gray" | "blue";
-const tones: Record<Tone, string> = {
-  green: "bg-ok-50 text-ok border-green-200",
-  amber: "bg-warn-50 text-warn border-amber-200",
-  red: "bg-emergency-50 text-emergency border-red-200",
-  gray: "bg-stone-100 text-stone-700 border-stone-200",
-  blue: "bg-sky-50 text-sky-800 border-sky-200",
+type PlainTone = "green" | "amber" | "red" | "gray" | "blue";
+const PLAIN: Record<PlainTone, string> = {
+  green: "bg-ok-50 text-ok border-ok-line",
+  amber: "bg-warn-50 text-warn border-warn-line",
+  red: "bg-emergency-50 text-emergency border-emergency-line",
+  gray: "bg-surface-2 text-muted border-line",
+  blue: "bg-info-50 text-info border-info-line",
 };
-export function Badge({ tone = "gray", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
-  return <span className={clsx("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold", tones[tone], className)}>{children}</span>;
+/** Plain label chip (Rx, Priority, Brand…). For anything with a *state*, use StatusBadge, which also shows an icon. */
+export function Badge({ tone = "gray", children, className }: { tone?: PlainTone; children: ReactNode; className?: string }) {
+  return <span className={clsx("inline-flex items-center gap-1 rounded-pill border px-2.5 py-1 text-xs font-semibold leading-none", PLAIN[tone], className)}>{children}</span>;
 }
 
 export function Verified({ label = "Verified" }: { label?: string }) {
   return (
-    <Badge tone="green">
+    <span className="inline-flex items-center gap-1 rounded-pill border border-ok-line bg-ok-50 px-2.5 py-1 text-xs font-semibold leading-none text-ok">
       <ShieldCheck className="size-3.5" aria-hidden /> {label}
-    </Badge>
-  );
-}
-
-interface FieldProps { label: string; hint?: string; error?: string; required?: boolean }
-
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & FieldProps>(function Input({ label, hint, error, required, className, ...rest }, ref) {
-  const id = useId();
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-semibold">
-        {label}
-        {required && <span className="text-emergency" aria-hidden> *</span>}
-      </label>
-      <input ref={ref} id={id} required={required} aria-invalid={!!error} aria-describedby={error ? `${id}-e` : hint ? `${id}-h` : undefined} {...rest}
-        className={clsx("min-h-12 w-full rounded-2xl border-2 bg-white px-4 py-2.5 text-base placeholder:text-stone-400 focus:border-brand-600 disabled:bg-stone-100", error ? "border-emergency" : "border-line", className)} />
-      {hint && !error && <p id={`${id}-h`} className="text-sm text-muted">{hint}</p>}
-      {error && <p id={`${id}-e`} role="alert" className="text-sm font-medium text-emergency">{error}</p>}
-    </div>
-  );
-});
-
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & FieldProps>(function Select({ label, hint, error, required, className, children, ...rest }, ref) {
-  const id = useId();
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-semibold">{label}{required && <span className="text-emergency" aria-hidden> *</span>}</label>
-      <select ref={ref} id={id} aria-invalid={!!error} {...rest} className={clsx("min-h-12 w-full rounded-2xl border-2 bg-white px-3 py-2.5 text-base focus:border-brand-600", error ? "border-emergency" : "border-line", className)}>
-        {children}
-      </select>
-      {hint && !error && <p className="text-sm text-muted">{hint}</p>}
-      {error && <p role="alert" className="text-sm font-medium text-emergency">{error}</p>}
-    </div>
-  );
-});
-
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps>(function Textarea({ label, hint, error, required, className, ...rest }, ref) {
-  const id = useId();
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-semibold">{label}{required && <span className="text-emergency" aria-hidden> *</span>}</label>
-      <textarea ref={ref} id={id} rows={3} aria-invalid={!!error} {...rest} className={clsx("w-full rounded-2xl border-2 bg-white px-4 py-3 text-base focus:border-brand-600", error ? "border-emergency" : "border-line", className)} />
-      {hint && !error && <p className="text-sm text-muted">{hint}</p>}
-      {error && <p role="alert" className="text-sm font-medium text-emergency">{error}</p>}
-    </div>
-  );
-});
-
-export function Skeleton({ className }: { className?: string }) {
-  return <div aria-hidden className={clsx("skeleton", className)} />;
-}
-
-export function SkeletonList({ rows = 3, height = "h-24" }: { rows?: number; height?: string }) {
-  return (
-    <div role="status" aria-label="Loading" className="space-y-3">
-      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} className={clsx("w-full", height)} />)}
-      <span className="sr-only">Loading…</span>
-    </div>
+    </span>
   );
 }
 
 export function EmptyState({ title, body, action, icon }: { title: string; body?: string; action?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-[1.25rem] border-2 border-dashed border-line bg-white/60 px-6 py-10 text-center">
-      <div className="text-brand-600" aria-hidden>{icon ?? <Inbox className="size-10" />}</div>
-      <h3 className="text-lg font-bold">{title}</h3>
-      {body && <p className="max-w-md text-muted">{body}</p>}
+    <div className="flex flex-col items-center gap-3 rounded-card border-2 border-dashed border-line-strong bg-surface/60 px-6 py-10 text-center">
+      <span className="grid size-14 place-items-center rounded-full bg-brand-50 text-brand-600 [&>svg]:size-7" aria-hidden>{icon ?? <Inbox />}</span>
+      <h3 className="t-card">{title}</h3>
+      {body && <p className="t-support max-w-md">{body}</p>}
       {action}
     </div>
   );
 }
 
-export function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+/** Error with a retry. Knows the difference between "the server said no" and "you have no signal". */
+export function ErrorState({ message, onRetry, offline }: { message?: string; onRetry?: () => void; offline?: boolean }) {
+  const off = offline || (typeof navigator !== "undefined" && !navigator.onLine);
   return (
-    <div role="alert" className="flex flex-col items-center gap-3 rounded-[1.25rem] border border-red-200 bg-emergency-50 px-6 py-8 text-center">
-      <AlertTriangle className="size-9 text-emergency" aria-hidden />
-      <p className="font-semibold text-emergency">{message ?? "Something went wrong."}</p>
+    <div role="alert" className={clsx("flex flex-col items-center gap-3 rounded-card border px-6 py-8 text-center", off ? "border-warn-line bg-warn-50" : "border-emergency-line bg-emergency-50")}>
+      {off ? <WifiOff className="size-9 text-warn" aria-hidden /> : <AlertTriangle className="size-9 text-emergency" aria-hidden />}
+      <p className="t-card">{off ? "You are offline" : "Something went wrong"}</p>
+      <p className="t-support max-w-sm">{off ? "Check your internet connection. Your cart is saved on this phone." : message ?? "Please try again."}</p>
       {onRetry && <Button variant="secondary" onClick={onRetry}><RefreshCw className="size-4" aria-hidden /> Try again</Button>}
     </div>
   );
 }
 
 export function Notice({ tone = "amber", title, children }: { tone?: "amber" | "red" | "green" | "blue"; title?: string; children: ReactNode }) {
-  const t = { amber: "border-amber-300 bg-warn-50", red: "border-red-300 bg-emergency-50", green: "border-green-300 bg-ok-50", blue: "border-sky-300 bg-sky-50" }[tone];
+  const t = { amber: "border-warn-line bg-warn-50", red: "border-emergency-line bg-emergency-50", green: "border-ok-line bg-ok-50", blue: "border-info-line bg-info-50" }[tone];
   return (
-    <div role={tone === "red" ? "alert" : "note"} className={clsx("rounded-2xl border-2 p-4 text-sm", t)}>
-      {title && <p className="mb-1 font-bold">{title}</p>}
-      <div>{children}</div>
+    <div role={tone === "red" ? "alert" : "note"} className={clsx("rounded-card border p-4", t)}>
+      {title && <p className="t-card mb-1">{title}</p>}
+      <div className="t-support text-ink">{children}</div>
     </div>
   );
 }
 
 export function Success({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div role="status" className="flex items-start gap-3 rounded-2xl border-2 border-green-300 bg-ok-50 p-4">
+    <div role="status" className="flex items-start gap-3 rounded-card border border-ok-line bg-ok-50 p-4">
       <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-ok" aria-hidden />
-      <div><p className="font-bold">{title}</p>{children && <div className="text-sm text-muted">{children}</div>}</div>
+      <div><p className="t-card">{title}</p>{children && <div className="t-support text-ink">{children}</div>}</div>
     </div>
   );
 }
 
-/** One place that handles loading / error (with retry) / empty / data for every query-driven screen. */
+/** One place that handles loading / offline / error (with retry) / empty / data for every query-driven screen. */
 export function QueryBoundary<T>({ query, skeleton, empty, isEmpty, children }: {
   query: UseQueryResult<T>;
   skeleton?: ReactNode;
@@ -167,28 +104,42 @@ export function QueryBoundary<T>({ query, skeleton, empty, isEmpty, children }: 
   children: (data: T) => ReactNode;
 }) {
   if (query.isPending) return <>{skeleton ?? <SkeletonList />}</>;
-  if (query.isError) return <ErrorState message={(query.error as Error).message} onRetry={() => query.refetch()} />;
+  if (query.isError) {
+    const err = query.error as Error;
+    return <ErrorState message={err.message} offline={err instanceof ApiClientError && err.status === 0} onRetry={() => query.refetch()} />;
+  }
   if (isEmpty?.(query.data) && empty) return <>{empty}</>;
   return <>{children(query.data)}</>;
 }
 
-export function PageTitle({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+/** Page heading. `back` adds a clear way out on deep screens. */
+export function PageTitle({ title, subtitle, action, back }: { title: string; subtitle?: string; action?: ReactNode; back?: { href: string; label: string } }) {
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1 text-muted">{subtitle}</p>}
+    <div className="mb-5">
+      {back && <Link href={back.href} className="tap -ml-2 mb-1 inline-flex items-center gap-1 rounded-control px-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><ArrowLeft className="size-4" aria-hidden /> {back.label}</Link>}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="t-page">{title}</h1>
+          {subtitle && <p className="t-support mt-1 max-w-prose">{subtitle}</p>}
+        </div>
+        {action}
       </div>
-      {action}
+    </div>
+  );
+}
+export { PageTitle as PageHeader };
+
+/** Section heading with an optional "See all" link. Used on every screen that has sections. */
+export function SectionHeader({ title, href, linkLabel = "See all", id, action }: { title: string; href?: string; linkLabel?: string; id?: string; action?: ReactNode }) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <h2 id={id} className="t-section">{title}</h2>
+      {action ?? (href && <Link href={href} className="tap inline-flex items-center gap-0.5 text-sm font-bold text-brand-700">{linkLabel} <ChevronRight className="size-4" aria-hidden /></Link>)}
     </div>
   );
 }
 
-export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "warn" | "ok" | "red" }) {
-  return (
-    <Card className={clsx(tone === "warn" && "border-amber-300 bg-warn-50", tone === "red" && "border-red-300 bg-emergency-50")}>
-      <p className="text-sm font-medium text-muted">{label}</p>
-      <p className="mt-1 text-2xl font-extrabold">{value}</p>
-    </Card>
-  );
+/** Short form of DashboardMetricCard for simple label + value tiles. */
+export function Stat({ label, value, tone, hint }: { label: string; value: ReactNode; tone?: "warn" | "ok" | "red"; hint?: ReactNode }) {
+  return <DashboardMetricCard label={label} value={value} hint={hint} tone={tone === "warn" ? "attention" : tone === "red" ? "danger" : tone === "ok" ? "success" : "neutral"} />;
 }

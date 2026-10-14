@@ -1,7 +1,11 @@
 import { SignJWT, jwtVerify } from "jose";
 import type { SessionUser } from "./types";
 
-export const SESSION_COOKIE = "mc_session";
+/**
+ * Cookie name. In production the `__Host-` prefix makes browsers insist on: Secure, Path=/, no Domain.
+ * That stops a sibling sub-domain from planting or overwriting our session cookie.
+ */
+export const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-mc_session" : "mc_session";
 
 function secret(): Uint8Array {
   const s = process.env.AUTH_SECRET;
@@ -12,14 +16,16 @@ function secret(): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
-const ttlHours = () => Number(process.env.SESSION_TTL_HOURS ?? 72);
-
-export async function signSession(user: SessionUser): Promise<string> {
-  return new SignJWT({ name: user.name, role: user.role, partnerId: user.partnerId })
+/**
+ * The cookie value. It only NAMES the server-side session (`sid`); whether that session is still valid (not revoked, not
+ * expired) is decided by the server on every request. The role inside is a hint for edge redirects, never for authorization.
+ */
+export async function signSession(user: SessionUser, opts: { sessionId: string; expiresAt: Date }): Promise<string> {
+  return new SignJWT({ name: user.name, role: user.role, partnerId: user.partnerId, sid: opts.sessionId })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
     .setIssuedAt()
-    .setExpirationTime(`${ttlHours()}h`)
+    .setExpirationTime(Math.floor(opts.expiresAt.getTime() / 1000))
     .sign(secret());
 }
 
@@ -28,22 +34,43 @@ export async function verifySession(token?: string | null): Promise<SessionUser 
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
-    if (!payload.sub || typeof payload.role !== "string") return null;
+    if (!payload.sub || typeof payload.role !== "string" || typeof payload.sid !== "string") return null;
     return {
       id: payload.sub,
       name: String(payload.name ?? ""),
       role: payload.role as SessionUser["role"],
       partnerId: payload.partnerId as string | undefined,
+      sessionId: payload.sid,
     };
   } catch {
     return null;
   }
 }
 
-export const cookieOptions = () => ({
+/** Short-lived, single-purpose tokens (finish signup after the mobile was verified; finish admin sign-in after the password). */
+export async function signPurposeToken(purpose: "signup" | "mfa", claims: Record<string, string>, ttlSeconds: number): Promise<string> {
+  return new SignJWT({ ...claims, purpose })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + ttlSeconds)
+    .sign(secret());
+}
+
+export async function verifyPurposeToken(token: string | undefined, purpose: "signup" | "mfa"): Promise<Record<string, string> | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
+    if (payload.purpose !== purpose) return null;
+    return Object.fromEntries(Object.entries(payload).filter(([, v]) => typeof v === "string")) as Record<string, string>;
+  } catch {
+    return null;
+  }
+}
+
+export const cookieOptions = (expiresAt: Date) => ({
   httpOnly: true,
   sameSite: "lax" as const,
   secure: process.env.NODE_ENV === "production",
   path: "/",
-  maxAge: ttlHours() * 3600,
+  expires: expiresAt,
 });

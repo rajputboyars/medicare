@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import type * as T from "@/lib/types";
+import { DEFAULT_PREFERENCES } from "@/lib/types";
 import { deriveOtp, hashOtp, newNonce } from "@/server/features/delivery/otp";
 
 /**
@@ -19,6 +20,14 @@ export interface Db {
   carts: T.Cart[];
   orders: T.Order[];
   orderStatusHistory: T.OrderStatusHistory[];
+  sessions: T.Session[];
+  otpChallenges: T.OtpChallenge[];
+  serviceAreaInterests: T.ServiceAreaInterest[];
+  partnerApplications: T.PartnerApplication[];
+  partnerDocuments: T.PartnerDocument[];
+  callbackRequests: T.CallbackRequest[];
+  assistedConsents: T.AssistedConsent[];
+  analytics: T.AnalyticsRecord[];
   deliveryPartners: T.DeliveryPartner[];
   deliveries: T.Delivery[];
   payments: T.Payment[];
@@ -137,7 +146,11 @@ export function buildSeed(): Db {
 
   // ---------- Users ----------
   const mkUser = (id: string, name: string, mobile: string, email: string | undefined, role: T.Role, partnerId?: string, lang: "en" | "hi" = "en"): T.User =>
-    ({ id, name, mobile, email, passwordHash: hash, role, partnerId, language: lang, consent, createdAt: hoursAgo(24 * 90) });
+    ({
+      id, name, mobile, email, passwordHash: hash, role, partnerId, language: lang, consent, createdAt: hoursAgo(24 * 90),
+      preferences: { ...DEFAULT_PREFERENCES }, status: "ACTIVE", mobileVerifiedAt: hoursAgo(24 * 90),
+      pincode: role === "CUSTOMER" ? "261001" : undefined, district: role === "CUSTOMER" ? "Sitapur" : undefined,
+    });
   const users: T.User[] = [
     mkUser("u_1", "Asha Verma", "9876543210", "asha@example.com", "CUSTOMER"),
     mkUser("u_2", "Rajesh Kumar", "9876500002", "rajesh@example.com", "CUSTOMER", undefined, "hi"),
@@ -152,7 +165,7 @@ export function buildSeed(): Db {
     mkUser("u_dp3", "Imran Ali", "9822200003", "rider3@example.com", "DELIVERY_PARTNER", "dp_3", "hi"),
     mkUser("u_dp4", "Vikas Pal", "9822200004", "rider4@example.com", "DELIVERY_PARTNER", "dp_4", "hi"),
     mkUser("u_dp5", "Ajay Tiwari", "9822200005", "rider5@example.com", "DELIVERY_PARTNER", "dp_5", "hi"),
-    mkUser("u_ad", "Platform Admin", "9800000001", "admin@example.com", "SUPER_ADMIN"),
+    { ...mkUser("u_ad", "Platform Admin", "9800000001", "admin@example.com", "SUPER_ADMIN"), mfa: { enabled: false, method: "SMS_OTP" as const } },
   ];
 
   const familyMembers: T.FamilyMember[] = [
@@ -273,6 +286,42 @@ export function buildSeed(): Db {
     { id: "req_2", userId: "u_3", medicineQuery: "Digene gel", strength: "200 ml", quantity: 1, mobile: "9876500003", pincode: "261121", status: "FOUND", expiresAt: daysAhead(1), createdAt: hoursAgo(20) },
   ];
 
+  // Two applicants for the admin review queue: one waiting for review, one half-finished draft
+  const applicantUsers: T.User[] = [
+    { ...mkUser("u_app1", "Neha Srivastava", "9811100031", undefined, "PHARMACY_ADMIN"), passwordHash: undefined, pincode: undefined, district: undefined },
+    { ...mkUser("u_app2", "Arjun Mishra", "9822200031", undefined, "DELIVERY_PARTNER"), passwordHash: undefined, pincode: undefined, district: undefined },
+  ];
+  users.push(...applicantUsers);
+  const evt = (id: string, type: T.ApplicationEvent["type"], at: string, over: Partial<T.ApplicationEvent> = {}): T.ApplicationEvent => ({ id, type, at, actorId: over.actorId ?? "u_app1", actorRole: over.actorRole ?? "PHARMACY_ADMIN", ...over });
+  const partnerApplications: T.PartnerApplication[] = [
+    {
+      id: "app_1", type: "PHARMACY", userId: "u_app1", status: "SUBMITTED", step: 8, createdAt: hoursAgo(30), updatedAt: hoursAgo(5), submittedAt: hoursAgo(5),
+      data: {
+        owner: { ownerName: "Neha Srivastava", email: "neha@example.com" },
+        store: { storeName: "Sanjeevani Medical Hall", storeType: "RETAIL" },
+        address: { address: "Gandhi Chowk, Sitapur", area: "Gandhi Chowk", town: "Sitapur", district: "Sitapur", state: "Uttar Pradesh", pincode: "261001", landmark: "Opposite the post office" },
+        license: { drugLicenseNumber: "UP-SIT-25-9001 (demo)", validTill: "2029-12-31", issuingState: "Uttar Pradesh", gstin: "09ABCDE1234F1Z5" },
+        pharmacist: { pharmacistName: "Mohit Verma", registrationNumber: "UPPC-44321", pharmacistMobile: "9811100032" },
+        delivery: { servicePincodes: ["261001"], radiusKm: 6, openTime: "09:00", closeTime: "21:00", priorityDelivery: false, avgPrepMinutes: 15 },
+        inventory: { plan: "CSV_AFTER_APPROVAL" },
+      },
+      events: [evt("ev_a1", "STARTED", hoursAgo(30)), evt("ev_a2", "SUBMITTED", hoursAgo(5), { fromStatus: "DRAFT", toStatus: "SUBMITTED" })],
+    },
+    {
+      id: "app_2", type: "RIDER", userId: "u_app2", status: "DRAFT", step: 2, createdAt: hoursAgo(3), updatedAt: hoursAgo(2),
+      data: { personal: { fullName: "Arjun Mishra" }, address: { address: "Ward 4, Biswan", town: "Biswan", district: "Sitapur", state: "Uttar Pradesh", pincode: "261125" } },
+      events: [evt("ev_b1", "STARTED", hoursAgo(3), { actorId: "u_app2", actorRole: "DELIVERY_PARTNER" })],
+    },
+  ];
+  const partnerDocuments: T.PartnerDocument[] = [];
+  const docFile = (id: string, appId: string, userId: string, kind: T.DocumentKind, fileName: string) => {
+    files.set(`${id}.png`, { bytes: PNG_1PX, mimeType: "image/png", ownerId: userId });
+    partnerDocuments.push({ id, applicationId: appId, uploadedBy: userId, kind, fileKey: `${id}.png`, fileName, mimeType: "image/png", sizeBytes: PNG_1PX.byteLength, status: "UPLOADED", createdAt: hoursAgo(6) });
+  };
+  docFile("doc_1", "app_1", "u_app1", "DRUG_LICENSE", "drug-licence.png");
+  docFile("doc_2", "app_1", "u_app1", "SHOP_IMAGE", "shop-front.png");
+  docFile("doc_3", "app_1", "u_app1", "PHARMACIST_CERTIFICATE", "pharmacist-certificate.png");
+
   // The OrderStatusHistory ledger, rebuilt from each order's recorded steps
   const orderStatusHistory: T.OrderStatusHistory[] = orders.flatMap((o) => o.statusHistory.map((e, i) => ({
     id: `osh_${o.id}_${i + 1}`, orderId: o.id, fromStatus: i === 0 ? undefined : o.statusHistory[i - 1].status, toStatus: e.status,
@@ -281,7 +330,9 @@ export function buildSeed(): Db {
   })));
 
   return {
-    users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory, deliveryPartners, deliveries, payments,
+    users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory,
+    sessions: [], otpChallenges: [], serviceAreaInterests: [], callbackRequests: [], assistedConsents: [], analytics: [],
+    partnerApplications, partnerDocuments, deliveryPartners, deliveries, payments,
     settlements: [
       { id: "set_1", partnerType: "PHARMACY", partnerId: "ph_1", periodStart: hoursAgo(24 * 37), periodEnd: hoursAgo(24 * 7), orderCount: 2, gross: orders[0].total + orders[6].total, commission: Math.round((orders[0].total + orders[6].total) * 0.08), net: Math.round((orders[0].total + orders[6].total) * 0.92), status: "PAID", createdAt: hoursAgo(24 * 7) },
       { id: "set_2", partnerType: "DELIVERY", partnerId: "dp_1", periodStart: hoursAgo(24 * 7), periodEnd: hoursAgo(0), orderCount: 1, gross: 45, commission: 0, net: 45, status: "PROCESSING", createdAt: hoursAgo(2) },
@@ -298,9 +349,9 @@ export function buildSeed(): Db {
       { id: "tk_2", userId: "u_2", subject: "Change of address", message: "How do I change the delivery address on a saved order?", status: "RESOLVED", createdAt: hoursAgo(48) },
     ],
     serviceAreas: [
-      { id: "sa_1", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "ACTIVE", launchSignups: [] },
-      { id: "sa_2", level: "PINCODE", name: "261121", state: "Uttar Pradesh", district: "Sitapur", pincode: "261121", status: "ACTIVE", launchSignups: [] },
-      { id: "sa_3", level: "PINCODE", name: "261125", state: "Uttar Pradesh", district: "Sitapur", pincode: "261125", status: "ACTIVE", launchSignups: [] },
+      { id: "sa_1", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "ACTIVE" },
+      { id: "sa_2", level: "PINCODE", name: "261121", state: "Uttar Pradesh", district: "Sitapur", pincode: "261121", status: "ACTIVE" },
+      { id: "sa_3", level: "PINCODE", name: "261125", state: "Uttar Pradesh", district: "Sitapur", pincode: "261125", status: "ACTIVE" },
     ],
     savedMedicines: [
       { id: "sv_1", userId: "u_1", familyMemberId: "fm_2", label: "Diabetes & Blood Pressure", items: [{ medicineId: MED.METFORMIN, quantity: 3 }, { medicineId: MED.TELMISARTAN, quantity: 1 }], everyDays: 30, nextRefillAt: daysAhead(4), reminderOn: true, preferredPharmacyId: "ph_1" },

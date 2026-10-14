@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pincodeSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { pharmacyOf, updatePharmacySettings } from "@/server/features/pharmacy/pharmacy.service";
+import { pharmacyOf, pharmacySettingsView, updatePharmacySettings } from "@/server/features/pharmacy/pharmacy.service";
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const schema = z.object({
@@ -11,8 +11,8 @@ const schema = z.object({
   priorityDelivery: z.boolean().optional(), acceptingOrders: z.boolean().optional(),
 });
 
-export const GET = handle(async () => pharmacyOf(await requireUser("inventory:manage")));
+export const GET = handle(async () => pharmacySettingsView(pharmacyOf(await requireUser("inventory:manage"))));
 export const PATCH = handle(async (req: Request) => {
   const u = await requireUser("pharmacy:manage");
-  return updatePharmacySettings(u, await parseBody(req, schema));
+  return pharmacySettingsView(updatePharmacySettings(u, await parseBody(req, schema)));
 });

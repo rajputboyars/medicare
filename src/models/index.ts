@@ -42,11 +42,17 @@ export const User = define("User", {
   name: { type: S, required: true, trim: true },
   email: { type: S, lowercase: true, trim: true },
   mobile: { type: S, required: true },
-  passwordHash: { type: S, required: true, select: false },
+  passwordHash: { type: S, select: false }, // customers and partners sign in with a one-time code and have none
   role: { type: S, enum: [...ROLES], default: "CUSTOMER" },
   partnerId: S,
-  language: { type: S, enum: ["en", "hi"], default: "en" },
+  language: { type: S, default: "en" }, // validated against the language registry in src/i18n
+  pincode: S, district: S,
+  preferences: new Schema({ largeText: Boolean, largeControls: Boolean, simplified: Boolean, highContrast: Boolean }, { _id: false }),
   consent: new Schema({ healthData: Boolean, marketing: Boolean, acceptedAt: Date }, { _id: false }),
+  status: { type: S, enum: ["ACTIVE", "SUSPENDED"], default: "ACTIVE" },
+  mobileVerifiedAt: Date,
+  failedLogins: Number, lockedUntil: Date,
+  mfa: new Schema({ enabled: Boolean, method: { type: S, enum: ["SMS_OTP", "TOTP"] } }, { _id: false }),
   createdAt: { type: Date, default: Date.now },
 }, (s) => {
   s.index({ mobile: 1 }, { unique: true });
@@ -74,6 +80,7 @@ export const Address = define("Address", {
   landmark: { type: S, required: true }, // first-class field
   houseDescription: S,
   location: point,
+  deliveryNotes: S, isDefault: Boolean,
 }, (s) => { s.index({ userId: 1 }); s.index({ pincode: 1 }); });
 
 export const Medicine = define("Medicine", {
@@ -96,6 +103,10 @@ export const Pharmacy = define("Pharmacy", {
   servicePincodes: [S],
   deliveryRadiusKm: Number, openTime: S, closeTime: S, priorityDelivery: Boolean, avgPrepMinutes: Number,
   rating: Number, ratingCount: Number, acceptingOrders: { type: Boolean, default: false },
+  onboarding: new Schema({
+    deliverySettingsDone: Boolean, trainingDone: Boolean, walkthroughSeen: Boolean,
+    settlement: new Schema({ holderName: S, accountNumber: S, ifsc: S, upiId: S, savedAt: Date }, { _id: false }),
+  }, { _id: false }),
 }, (s) => {
   s.index({ drugLicense: 1 }, { unique: true });
   s.index({ servicePincodes: 1, verification: 1, acceptingOrders: 1 });
@@ -162,6 +173,7 @@ export const Order = define("Order", {
   stockAllocations: [new Schema({ inventoryId: S, quantity: Number }, { _id: false })],
   stockState: { type: S, enum: ["NONE", "RESERVED", "CONSUMED", "RELEASED"], default: "NONE" },
   paymentExpiresAt: Date,
+  assisted: new Schema({ pharmacyId: S, staffUserId: S, consentId: S }, { _id: false }),
   deliveryPartnerId: S, settlementId: S, cancelReason: S, cancelledBy: S, isRepeat: Boolean,
   createdAt: { type: Date, default: Date.now },
 }, (s) => {
@@ -221,7 +233,7 @@ export const Settlement = define("Settlement", {
 
 export const ServiceArea = define("ServiceArea", {
   level: { type: S, enum: ["STATE", "DISTRICT", "TOWN", "PINCODE"] }, name: S, state: S, district: S, town: S, pincode: S,
-  status: { type: S, enum: ["ACTIVE", "COMING_SOON", "DISABLED"], default: "COMING_SOON" }, launchSignups: [S],
+  status: { type: S, enum: ["ACTIVE", "COMING_SOON", "DISABLED"], default: "COMING_SOON" },
 }, (s) => { s.index({ level: 1, name: 1 }, { unique: true }); s.index({ pincode: 1 }); s.index({ status: 1 }); });
 
 export const Notification = define("Notification", {
@@ -233,6 +245,63 @@ export const SupportTicket = define("SupportTicket", {
   userId: { type: S, required: true }, orderId: S, subject: S, message: S,
   status: { type: S, enum: ["OPEN", "IN_PROGRESS", "RESOLVED"], default: "OPEN" }, createdAt: { type: Date, default: Date.now },
 }, (s) => { s.index({ status: 1, createdAt: -1 }); s.index({ userId: 1 }); });
+
+// ── Authentication, onboarding and trust ──
+
+/** One signed-in device. The cookie only names the session; this row decides whether it still works. */
+export const Session = define("Session", {
+  userId: { type: S, required: true }, kind: { type: S, enum: ["STANDARD", "ADMIN"] },
+  createdAt: Date, lastSeenAt: Date, absoluteExpiresAt: Date, expiresAt: Date, revokedAt: Date, revokedReason: S,
+  userAgent: S, ip: S, mfaVerified: Boolean, elevatedUntil: Date,
+}, (s) => { s.index({ userId: 1, revokedAt: 1 }); s.index({ expiresAt: 1 }); });
+
+/** Sent one-time codes. Only a keyed hash is stored (hidden from default queries). */
+export const OtpChallenge = define("OtpChallenge", {
+  mobile: { type: S, required: true }, purpose: { type: S, enum: ["AUTH", "ADMIN_MFA", "ASSISTED_CONSENT"] },
+  codeHash: { type: S, required: true, select: false },
+  attempts: Number, maxAttempts: Number, expiresAt: { type: Date, required: true }, consumedAt: Date, invalidatedAt: Date,
+  subjectId: S, ip: S, createdAt: Date,
+}, (s) => { s.index({ mobile: 1, purpose: 1, createdAt: -1 }); s.index({ expiresAt: 1 }); });
+
+export const ServiceAreaInterest = define("ServiceAreaInterest", {
+  mobile: { type: S, required: true }, pincode: { type: S, required: true }, district: S, createdAt: { type: Date, default: Date.now },
+}, (s) => { s.index({ mobile: 1, pincode: 1 }, { unique: true }); s.index({ pincode: 1 }); });
+
+const appEvent = new Schema({
+  id: S, at: Date, actorId: S, actorRole: S, type: S, fromStatus: S, toStatus: S, note: S, internal: Boolean,
+}, { _id: false });
+
+/** A pharmacy or rider application. The Pharmacy / DeliveryPartner record only exists after approval. */
+export const PartnerApplication = define("PartnerApplication", {
+  type: { type: S, enum: ["PHARMACY", "RIDER"], required: true }, userId: { type: S, required: true },
+  status: { type: S, enum: ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "MORE_INFO_REQUIRED", "APPROVED", "REJECTED", "SUSPENDED"], default: "DRAFT" },
+  step: Number, data: Schema.Types.Mixed, events: [appEvent], partnerId: S,
+  createdAt: Date, updatedAt: Date, submittedAt: Date, decidedAt: Date, decidedBy: S,
+}, (s) => { s.index({ userId: 1, type: 1 }, { unique: true }); s.index({ type: 1, status: 1, updatedAt: -1 }); });
+
+/** Private application files. The bytes are in private storage under an opaque key (select:false). */
+export const PartnerDocument = define("PartnerDocument", {
+  applicationId: { type: S, required: true }, uploadedBy: S,
+  kind: { type: S, enum: ["DRUG_LICENSE", "SHOP_IMAGE", "PHARMACIST_CERTIFICATE", "GST_CERTIFICATE", "OTHER_BUSINESS", "ID_PROOF", "DRIVING_LICENSE", "VEHICLE_RC", "PROFILE_PHOTO"] },
+  label: S, fileKey: { type: S, required: true, select: false }, fileName: S, mimeType: S, sizeBytes: Number,
+  status: { type: S, enum: ["UPLOADED", "APPROVED", "REJECTED", "REUPLOAD_REQUESTED"], default: "UPLOADED" },
+  reviewNote: S, reviewedBy: S, reviewedAt: Date, createdAt: Date,
+}, (s) => { s.index({ applicationId: 1, kind: 1 }); });
+
+export const CallbackRequest = define("CallbackRequest", {
+  mobile: { type: S, required: true }, name: S, area: S, reason: S,
+  status: { type: S, enum: ["OPEN", "CONTACTED", "CLOSED"], default: "OPEN" }, note: S, handledBy: S, createdAt: { type: Date, default: Date.now },
+}, (s) => { s.index({ status: 1, createdAt: -1 }); });
+
+export const AssistedConsent = define("AssistedConsent", {
+  pharmacyId: { type: S, required: true }, requestedBy: S, customerUserId: S, mobile: { type: S, required: true },
+  status: { type: S, enum: ["PENDING", "GRANTED", "DENIED", "EXPIRED", "USED"] }, challengeId: S,
+  grantedAt: Date, expiresAt: Date, orderId: S, createdAt: Date,
+}, (s) => { s.index({ pharmacyId: 1, createdAt: -1 }); s.index({ mobile: 1, status: 1 }); });
+
+export const AnalyticsEvent = define("AnalyticsEvent", {
+  name: { type: S, required: true }, userId: S, anonId: S, props: Schema.Types.Mixed, at: { type: Date, default: Date.now },
+}, (s) => { s.index({ name: 1, at: -1 }); s.index({ at: -1 }); });
 
 // ── Supporting collections ──
 
@@ -264,6 +333,7 @@ export const AuditLog = define("AuditLog", {
 export const StoredFile = define("StoredFile", { bytes: { type: Buffer, select: true }, mimeType: S, ownerId: S });
 
 export const ALL_MODELS = [
+  Session, OtpChallenge, ServiceAreaInterest, PartnerApplication, PartnerDocument, CallbackRequest, AssistedConsent, AnalyticsEvent,
   User, FamilyMember, Address, Medicine, Pharmacy, PharmacyInventory, Prescription, MedicineRequest, MedicineRequestResponse, Cart, Order, OrderItem, OrderStatusHistory,
   DeliveryPartner, Delivery, Payment, Settlement, ServiceArea, Notification, SupportTicket, SavedMedicine, Review, Offer, PlatformSettingsModel, AuditLog, StoredFile,
 ];

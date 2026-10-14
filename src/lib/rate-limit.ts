@@ -4,6 +4,8 @@
  */
 export interface RateLimiter {
   hit(key: string, limit: number, windowMs: number): { allowed: boolean; remaining: number; retryAfterSec: number };
+  /** Has this key already used up its allowance? (does not count) */
+  peek?(key: string, limit: number): boolean;
   /** Forget all counters (tests). */
   reset?(): void;
 }
@@ -11,6 +13,10 @@ export interface RateLimiter {
 export class MemoryRateLimiter implements RateLimiter {
   private buckets = new Map<string, { count: number; resetAt: number }>();
   reset() { this.buckets.clear(); }
+  peek(key: string, limit: number) {
+    const b = this.buckets.get(key);
+    return !!b && b.resetAt > Date.now() && b.count >= limit;
+  }
   hit(key: string, limit: number, windowMs: number) {
     const now = Date.now();
     let b = this.buckets.get(key);

@@ -60,12 +60,11 @@ export function prescriptionFor(user: SessionUser, id: string) {
 }
 
 /** Quick order for people who find forms hard: mobile + address + photo → team calls back. */
-export function quickOrder(input: { mobile: string; pincode: string; addressText: string; file: UploadInput["file"] }) {
+export function quickOrder(input: { mobile: string; pincode: string; addressText: string; userId: string; file: UploadInput["file"] }) {
   const d = db();
   const cover = coverageFor(input.pincode);
   if (!cover.available) throw badRequest(cover.message ?? "We're coming to your area. We can't take orders for this pincode yet.");
-  const existing = d.users.find((u) => u.mobile === input.mobile);
-  const owner = existing?.id ?? `guest:${input.mobile}`;
+  const owner = input.userId;
   const rx = storePrescription({ userId: owner, file: input.file, requestedMedicines: [], source: "QUICK_ORDER", callbackMobile: input.mobile });
   d.tickets.unshift({ id: uid("tk"), userId: owner, subject: "Quick order: call me", message: `Callback to ${input.mobile}. Deliver to: ${input.addressText} (${input.pincode}). Prescription ${rx.id}.`, status: "OPEN", createdAt: new Date().toISOString() });
   return { id: rx.id, status: rx.status };

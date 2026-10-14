@@ -3,11 +3,23 @@ import { isFinal } from "@/lib/order-machine";
 import { availableQuantity, type Pharmacy, type PharmacyInventory, type SessionUser } from "@/lib/types";
 import { badRequest, conflict, forbidden, notFound } from "@/server/errors";
 import { audit, db, uid } from "@/server/store";
+import { track } from "@/server/analytics";
 
+/**
+ * The caller's pharmacy. This is the gate for EVERY pharmacy action (orders, stock, requests, reports):
+ * an applicant has no pharmacy yet, and a pharmacy that is not VERIFIED (pending, rejected, suspended) cannot sell.
+ */
 export function pharmacyOf(user: SessionUser): Pharmacy {
   const p = db().pharmacies.find((x) => x.id === user.partnerId);
-  if (!p) throw forbidden("No pharmacy is linked to this account");
+  if (!p) throw forbidden("Your pharmacy is not approved yet");
+  if (p.verification !== "VERIFIED") throw forbidden("Your pharmacy is not active. Please contact support.");
   return p;
+}
+
+/** The pharmacy as its own staff see it: the settlement account number is masked. */
+export function pharmacySettingsView(p: Pharmacy) {
+  const s = p.onboarding?.settlement;
+  return { ...p, onboarding: p.onboarding && { ...p.onboarding, settlement: s && { holderName: s.holderName, upiId: s.upiId, ifsc: s.ifsc, accountLast4: s.accountNumber?.slice(-4), savedAt: s.savedAt } } };
 }
 
 const startOfDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -49,6 +61,7 @@ export function upsertInventory(user: SessionUser, input: Omit<PharmacyInventory
   }
   const row: PharmacyInventory = { id: uid("inv"), pharmacyId: p.id, ...input, reservedQuantity: 0, lastUpdatedAt: stamp() };
   d.inventory.push(row);
+  track("inventory_added", { userId: user.id }, { via: "manual" });
   audit(user, "INVENTORY_ADDED", "Inventory", row.id, { medicineId: row.medicineId, stockQuantity: row.stockQuantity });
   return row;
 }
@@ -97,6 +110,7 @@ export function bulkUploadCsv(user: SessionUser, csv: string) {
     imported++;
   });
   audit(user, "INVENTORY_BULK_UPLOAD", "Pharmacy", p.id, { imported, errors: errors.length });
+  if (imported) track("inventory_added", { userId: user.id }, { via: "csv", count: imported });
   return { imported, errors };
 }
 
@@ -207,6 +221,7 @@ export function updatePharmacySettings(user: SessionUser, patch: Partial<Pick<Ph
   const p = pharmacyOf(user);
   if (user.role !== "PHARMACY_ADMIN") throw forbidden("Only the pharmacy owner can change store settings");
   if (patch.acceptingOrders && p.verification !== "VERIFIED") throw forbidden("Your pharmacy must be verified before it can accept orders");
+  if (patch.acceptingOrders && !db().inventory.some((i) => i.pharmacyId === p.id && i.stockQuantity > 0)) throw conflict("Add your medicines first, then you can start accepting orders");
   Object.assign(p, patch);
   audit(user, "PHARMACY_SETTINGS_UPDATED", "Pharmacy", p.id, patch as Record<string, unknown>);
   return p;

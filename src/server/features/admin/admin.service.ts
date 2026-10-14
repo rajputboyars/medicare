@@ -1,9 +1,9 @@
-import bcrypt from "bcryptjs";
 import type { PlatformSettings, ServiceArea, ServiceAreaStatus, SessionUser, Settlement, VerificationStatus } from "@/lib/types";
 import { isFinal } from "@/lib/order-machine";
 import { badRequest, notFound } from "@/server/errors";
 import { audit, db, settings, uid } from "@/server/store";
 import { riderStatusOf } from "@/server/features/delivery/delivery.service";
+import { revokeAllSessions } from "../auth/session.service";
 import { requestResponses } from "@/server/features/medicine-requests/requests.service";
 
 const startOfDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -102,7 +102,8 @@ export function setVerification(actor: SessionUser, kind: PartnerKind, id: strin
 // ───────────── Service areas & launch sign-ups ─────────────
 
 export function listServiceAreas() {
-  return db().serviceAreas.map((a) => ({ ...a, launchSignups: a.launchSignups.length }));
+  const waiting = interestCounts();
+  return db().serviceAreas.map((a) => ({ ...a, launchSignups: a.pincode ? (waiting.get(a.pincode) ?? 0) : 0 }));
 }
 
 export function setServiceArea(actor: SessionUser, id: string, status: ServiceAreaStatus) {
@@ -114,27 +115,20 @@ export function setServiceArea(actor: SessionUser, id: string, status: ServiceAr
   return a;
 }
 
-export function addServiceArea(actor: SessionUser, input: Omit<ServiceArea, "id" | "launchSignups">) {
+export function addServiceArea(actor: SessionUser, input: Omit<ServiceArea, "id">) {
   const d = db();
   if (d.serviceAreas.some((a) => a.level === input.level && a.name.toLowerCase() === input.name.toLowerCase())) throw badRequest("This area already exists");
-  const a: ServiceArea = { id: uid("sa"), ...input, launchSignups: [] };
+  const a: ServiceArea = { id: uid("sa"), ...input };
   d.serviceAreas.push(a);
   audit(actor, "SERVICE_AREA_CREATED", "ServiceArea", a.id);
   return a;
 }
 
+import { interestCounts, registerInterest } from "@/server/features/service-areas/service-areas.service";
 export { coverageFor, type Coverage } from "@/server/features/service-areas/service-areas.service";
 
-export function launchSignup(mobile: string, pincode: string) {
-  const d = db();
-  let area = d.serviceAreas.find((a) => a.level === "PINCODE" && a.pincode === pincode);
-  if (!area) {
-    area = { id: uid("sa"), level: "PINCODE", name: pincode, state: "Unknown", pincode, status: "COMING_SOON", launchSignups: [] };
-    d.serviceAreas.push(area);
-  }
-  if (!area.launchSignups.includes(mobile)) area.launchSignups.push(mobile);
-  return { ok: true };
-}
+/** Kept for the old "leave your number" form: it now records a ServiceAreaInterest. */
+export const launchSignup = (mobile: string, pincode: string) => registerInterest({ mobile, pincode });
 
 // ───────────── Lists for the admin tables ─────────────
 
@@ -255,49 +249,30 @@ export function updatePlatformSettings(actor: SessionUser, patch: Partial<Platfo
   return s;
 }
 
-// ───────────── Partner self-registration (always lands as PENDING) ─────────────
-
-export function registerPharmacy(input: {
-  ownerName: string; mobile: string; email: string; password: string; name: string; drugLicense: string; gstin?: string;
-  address: string; pincode: string; district: string; servicePincodes: string[]; openTime: string; closeTime: string;
-}) {
-  const d = db();
-  if (d.users.some((u) => u.mobile === input.mobile || u.email?.toLowerCase() === input.email.toLowerCase())) throw badRequest("An account with this mobile or email already exists");
-  if (d.pharmacies.some((p) => p.drugLicense.toLowerCase() === input.drugLicense.toLowerCase())) throw badRequest("This drug licence is already registered");
-  const pharmacyId = uid("ph");
-  d.pharmacies.push({
-    id: pharmacyId, name: input.name, ownerName: input.ownerName, mobile: input.mobile, drugLicense: input.drugLicense, gstin: input.gstin || undefined,
-    verification: "PENDING", address: input.address, pincode: input.pincode, district: input.district,
-    location: { lat: 0, lng: 0 }, // set during onboarding from the shop's map pin
-    servicePincodes: input.servicePincodes, deliveryRadiusKm: 5, openTime: input.openTime, closeTime: input.closeTime,
-    priorityDelivery: false, avgPrepMinutes: 15, rating: 0, ratingCount: 0, acceptingOrders: false,
-  });
-  d.users.push({
-    id: uid("u"), name: input.ownerName, mobile: input.mobile, email: input.email, passwordHash: bcrypt.hashSync(input.password, 10),
-    role: "PHARMACY_ADMIN", partnerId: pharmacyId, language: "en", consent: { healthData: true, marketing: false, acceptedAt: new Date().toISOString() }, createdAt: new Date().toISOString(),
-  });
-  return { pharmacyId, status: "PENDING" as const };
-}
-
-export function registerRider(input: { name: string; mobile: string; email: string; password: string; vehicle: string }) {
-  const d = db();
-  if (d.users.some((u) => u.mobile === input.mobile || u.email?.toLowerCase() === input.email.toLowerCase())) throw badRequest("An account with this mobile or email already exists");
-  const partnerId = uid("dp");
-  d.deliveryPartners.push({ id: partnerId, name: input.name, mobile: input.mobile, vehicle: input.vehicle, verification: "PENDING", available: false, joinedAt: new Date().toISOString() });
-  const userId = uid("u");
-  d.users.push({
-    id: userId, name: input.name, mobile: input.mobile, email: input.email, passwordHash: bcrypt.hashSync(input.password, 10), role: "DELIVERY_PARTNER", partnerId,
-    language: "en", consent: { healthData: false, marketing: false, acceptedAt: new Date().toISOString() }, createdAt: new Date().toISOString(),
-  });
-  d.deliveryPartners.find((p) => p.id === partnerId)!.userId = userId;
-  return { partnerId, status: "PENDING" as const };
-}
-
 /** Every account for the admin screens. Password hashes never leave the server. */
 export function adminUsers() {
   const d = db();
-  return d.users.map(({ passwordHash: _h, ...u }) => {
-    void _h;
+  return d.users.map(({ passwordHash: _h, failedLogins: _f, lockedUntil: _l, mfa: _m, ...u }) => {
+    void _h; void _f; void _l; void _m;
     return { ...u, orders: d.orders.filter((o) => o.userId === u.id).length };
   });
+}
+
+/** Suspending an account signs the person out everywhere, immediately. */
+export function setUserStatus(actor: SessionUser, userId: string, status: "ACTIVE" | "SUSPENDED") {
+  const u = db().users.find((x) => x.id === userId);
+  if (!u) throw notFound("User not found");
+  if (u.id === actor.id) throw badRequest("You cannot suspend your own account");
+  if (u.role === "SUPER_ADMIN") throw badRequest("Admin accounts cannot be suspended here");
+  u.status = status;
+  const revoked = status === "SUSPENDED" ? revokeAllSessions(u.id, "account-suspended") : 0;
+  audit(actor, status === "SUSPENDED" ? "USER_SUSPENDED" : "USER_REINSTATED", "User", u.id, { revoked });
+  return { id: u.id, status: u.status, sessionsRevoked: revoked };
+}
+
+export function revokeUserSessions(actor: SessionUser, userId: string) {
+  if (!db().users.some((x) => x.id === userId)) throw notFound("User not found");
+  const revoked = revokeAllSessions(userId, "admin-revoked");
+  audit(actor, "SESSIONS_REVOKED", "User", userId, { revoked });
+  return { revoked };
 }

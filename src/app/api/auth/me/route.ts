@@ -1,6 +1,6 @@
 import { currentUser, handle } from "@/server/http";
 import { db } from "@/server/store";
-import { publicUser } from "@/server/services/accounts";
+import { publicUser } from "@/server/features/accounts/accounts.service";
 
 export const GET = handle(async () => {
   const s = await currentUser();

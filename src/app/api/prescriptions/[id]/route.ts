@@ -1,6 +1,6 @@
 import { signFileUrl } from "@/lib/signed-url";
 import { handle, requireUser } from "@/server/http";
-import { prescriptionFor } from "@/server/services/prescriptions";
+import { prescriptionFor } from "@/server/features/prescriptions/prescriptions.service";
 import { audit } from "@/server/store";
 
 /** Returns metadata and a short-lived signed URL. The URL contains no medical information. */

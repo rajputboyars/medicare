@@ -11,7 +11,7 @@ import { SortChips, type Strategy } from "@/components/medicine/sort-chips";
 import { PrescriptionBadge } from "@/components/customer/prescription-badge";
 import { Badge, Card, ConfirmationDialog, EmptyState, LinkButton, Notice, PageTitle, QueryBoundary, SkeletonList } from "@/components/ui";
 import type { Medicine } from "@/lib/types";
-import type { PharmacyOffer } from "@/server/services/finder";
+import type { PharmacyOffer } from "@/server/features/medicines/finder.service";
 
 type Data = { medicine: Medicine; offers: PharmacyOffer[] };
 

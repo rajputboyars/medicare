@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { riderSummary, setAvailability } from "@/server/services/delivery";
+import { riderSummary, setAvailability } from "@/server/features/delivery/delivery.service";
 
 export const GET = handle(async () => riderSummary(await requireUser("delivery:execute")));
 

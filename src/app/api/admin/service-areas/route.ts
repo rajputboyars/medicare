@@ -1,6 +1,6 @@
 import { serviceAreaSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { addServiceArea, listServiceAreas } from "@/server/services/admin";
+import { addServiceArea, listServiceAreas } from "@/server/features/admin/admin.service";
 
 export const GET = handle(async () => {
   await requireUser("admin:read");

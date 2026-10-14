@@ -1,5 +1,5 @@
 import { badRequest, handle, limit, requireUser } from "@/server/http";
-import { bulkUploadCsv } from "@/server/services/pharmacy";
+import { bulkUploadCsv } from "@/server/features/pharmacy/pharmacy.service";
 
 export const POST = handle(async (req: Request) => {
   const u = await requireUser("inventory:manage");

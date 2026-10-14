@@ -78,7 +78,7 @@ export function OrderCard({ o }: { o: PharmacyOrder }) {
       {o.patient.allergies && <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Allergy: {o.patient.allergies}</StatusBadge>}
 
       <ul className="divide-y divide-line text-sm">{o.items.map((i) => <li key={i.id} className="flex justify-between gap-3 py-2"><span>{i.name} <span className="t-caption">{i.strength}</span> ×{i.quantity} {i.prescriptionRequired && <Badge tone="amber">Rx</Badge>}</span><b>{inr(i.unitPrice * i.quantity)}</b></li>)}</ul>
-      <p className="flex justify-between font-bold"><span>{o.paymentMethod === "COD" ? "Cash on delivery" : o.paymentMethod} · {o.paymentStatus === "PAID" ? "paid" : o.paymentStatus === "COD_DUE" ? "to collect" : o.paymentStatus.replace("_", " ").toLowerCase()}</span><span>{inr(o.total)}</span></p>
+      <p className="flex justify-between font-bold"><span>{o.paymentMethod === "COD" ? "Cash on delivery" : o.paymentMethod} · {o.paymentStatus === "PAID" ? "paid" : o.paymentMethod === "COD" && o.paymentStatus === "PENDING" ? "to collect" : o.paymentStatus.replace("_", " ").toLowerCase()}</span><span>{inr(o.total)}</span></p>
 
       {o.prescription && (
         <div className="flex flex-wrap items-center gap-2">

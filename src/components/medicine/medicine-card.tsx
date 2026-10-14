@@ -6,7 +6,7 @@ import { Button, Card, ConfirmationDialog, StatusBadge } from "@/components/ui";
 import { PrescriptionBadge } from "@/components/customer/prescription-badge";
 import { useCart } from "@/lib/store";
 import { inr } from "@/lib/pricing";
-import type { MedicineResult, PharmacyOffer } from "@/server/services/finder";
+import type { MedicineResult, PharmacyOffer } from "@/server/features/medicines/finder.service";
 import type { Strategy } from "./sort-chips";
 
 export type { Strategy } from "./sort-chips";

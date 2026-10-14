@@ -14,7 +14,7 @@ import { OrderStatusTimeline } from "@/components/order/order-status-timeline";
 import { Badge, Button, Card, ConfirmationDialog, ErrorState, LinkButton, Notice, PageTitle, QueryBoundary, Select, SectionHeader, SkeletonList, Success } from "@/components/ui";
 import type { Order } from "@/lib/types";
 
-type O = Order & { canCancel?: boolean; pharmacy?: { id: string; name: string; mobile: string; address: string }; rider?: { name: string; mobile: string; vehicle: string } };
+type O = Order & { deliveryOtp?: string; pickupOtp?: string; canCancel?: boolean; pharmacy?: { id: string; name: string; mobile: string; address: string }; rider?: { name: string; mobile: string; vehicle: string } };
 
 function Detail({ id }: { id: string }) {
   const qc = useQueryClient();
@@ -94,7 +94,7 @@ function Detail({ id }: { id: string }) {
                 <div className="flex justify-between"><dt>Other fees</dt><dd>₹0</dd></div>
                 {o.discount > 0 && <div className="flex justify-between text-ok"><dt>Offer</dt><dd>−{inr(o.discount)}</dd></div>}
                 <div className="flex justify-between border-t border-line pt-2"><dt className="t-section">Total</dt><dd className="t-number text-xl">{inr(o.total)}</dd></div>
-                <div className="flex justify-between t-caption"><dt>Payment</dt><dd>{o.paymentMethod === "COD" ? "Cash on delivery" : o.paymentMethod} · {o.paymentStatus === "PAID" ? "paid" : o.paymentStatus === "COD_DUE" ? "pay on delivery" : o.paymentStatus.replace("_", " ").toLowerCase()}</dd></div>
+                <div className="flex justify-between t-caption"><dt>Payment</dt><dd>{o.paymentMethod === "COD" ? "Cash on delivery" : o.paymentMethod} · {o.paymentStatus === "PAID" ? "paid" : o.paymentMethod === "COD" && o.paymentStatus === "PENDING" ? "pay on delivery" : o.paymentStatus.replace("_", " ").toLowerCase()}</dd></div>
               </dl>
               <p className="t-support mt-3">Delivering to: {o.addressSnapshot.houseDescription}, {o.addressSnapshot.area}, {o.addressSnapshot.town} – {o.addressSnapshot.pincode}. Landmark: {o.addressSnapshot.landmark}</p>
             </Card>

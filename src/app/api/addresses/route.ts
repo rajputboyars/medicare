@@ -1,6 +1,6 @@
 import { addressSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { listAddresses, saveAddress } from "@/server/services/accounts";
+import { listAddresses, saveAddress } from "@/server/features/accounts/accounts.service";
 
 export const GET = handle(async () => listAddresses((await requireUser()).id));
 export const POST = handle(async (req: Request) => {

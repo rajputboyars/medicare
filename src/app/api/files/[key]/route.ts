@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyFileSignature } from "@/lib/signed-url";
 import { currentUser } from "@/server/http";
-import { canAccessPrescription } from "@/server/services/prescriptions";
+import { canAccessPrescription } from "@/server/features/prescriptions/prescriptions.service";
 import { db } from "@/server/store";
 
 /**

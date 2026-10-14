@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pincodeSchema } from "@/lib/validation";
 import { handle, validate } from "@/server/http";
-import { searchMedicines } from "@/server/services/finder";
+import { searchMedicines } from "@/server/features/medicines/finder.service";
 
 const schema = z.object({
   q: z.string().trim().max(80).optional(),

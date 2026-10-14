@@ -1,5 +1,5 @@
 import { handle } from "@/server/http";
-import { brands, categories } from "@/server/services/finder";
+import { brands, categories } from "@/server/features/medicines/finder.service";
 import { db } from "@/server/store";
 
 export const GET = handle(async () => ({

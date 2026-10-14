@@ -15,7 +15,7 @@ import { QuickActionCard } from "@/components/customer/quick-action-card";
 import { MedicineCard } from "@/components/medicine/medicine-card";
 import { OrderStatusBadge } from "@/components/order/order-status-badge";
 import { Card, EmptyState, LazyMount, LinkButton, Notice, QueryBoundary, SearchBar, SectionHeader, SkeletonList, StatusBadge, Verified } from "@/components/ui";
-import type { MedicineResult } from "@/server/services/finder";
+import type { MedicineResult } from "@/server/features/medicines/finder.service";
 import type { Order, SavedMedicine } from "@/lib/types";
 
 /** Home, in this order: location → search → quick actions → Find My Medicine → repeat medicines → nearby pharmacies → health essentials. */

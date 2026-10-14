@@ -13,7 +13,7 @@ import { db, setDb } from "./store";
  *
  * This is a deliberate V1 trade-off: business rules stay synchronous and fully tested, while the data is genuinely stored
  * in MongoDB with the production schemas/indexes. It assumes ONE server instance. The next step for horizontal scale is to
- * replace `db()` access in src/server/services with async repositories (the services are the only code that touches it).
+ * replace `db()` access in src/server/features with async repositories (the services are the only code that touches it).
  */
 
 type Row = Record<string, unknown> & { id: string };
@@ -53,12 +53,19 @@ const SINKS: Sink[] = [
   simple("medicineRequests", M.MedicineRequest, "medicineRequests"),
   simple("medicineRequestResponses", M.MedicineRequestResponse, "medicineRequestResponses"),
   simple("carts", M.Cart, "carts"),
+  simple("orderStatusHistory", M.OrderStatusHistory, "orderStatusHistory"),
   {
     name: "orders", model: M.Order,
-    extract: (d) => d.orders.map(({ items: _items, ...o }) => { void _items; return o as unknown as Row; }),
+    // Items and the status timeline live in their own collections (orderItems, orderStatusHistory) and are joined back on load.
+    extract: (d) => d.orders.map(({ items: _items, statusHistory: _h, ...o }) => { void _items; void _h; return o as unknown as Row; }),
     hydrate: (docs, target, all) => {
       const items = all.get("orderItems") ?? [];
-      target.orders = docs.map((o) => ({ ...o, items: items.filter((i) => i.orderId === o.id).sort((a, b) => Number(a.position) - Number(b.position)).map(({ position: _p, ...i }) => { void _p; return i; }) })) as unknown as Db["orders"];
+      const ledger = (all.get("orderStatusHistory") ?? []).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+      target.orders = docs.map((o) => ({
+        ...o,
+        items: items.filter((i) => i.orderId === o.id).sort((a, b) => Number(a.position) - Number(b.position)).map(({ position: _p, ...i }) => { void _p; return i; }),
+        statusHistory: ledger.filter((h) => h.orderId === o.id).map((h) => ({ status: h.toStatus, at: h.timestamp, note: h.note, by: h.actorRole === "SYSTEM" ? undefined : h.actorRole })),
+      })) as unknown as Db["orders"];
     },
   },
   {
@@ -132,7 +139,7 @@ async function loadAll(): Promise<Db> {
   for (const s of SINKS) s.hydrate(raw.get(s.name)!, target, raw);
   // Rows written by an older version of the app: fill fields added since.
   const now = new Date().toISOString();
-  for (const i of target.inventory) i.updatedAt ??= now;
+  for (const i of target.inventory) i.lastUpdatedAt ??= now;
   for (const r of target.medicineRequests) r.quantity ??= 1;
   return target;
 }
@@ -195,6 +202,9 @@ export async function initMongoStore(): Promise<void> {
     await flushNow();
     console.info("[persistence] empty database seeded with demo data");
   } else {
+    // Databases written before the reservation/OTP-hash redesign cannot be read safely: stop with a clear instruction.
+    const legacy = await M.PharmacyInventory.collection.findOne({ stockQuantity: { $exists: false } });
+    if (legacy) throw new Error("This database was created by an older version of DawaDost. Run \"npm run db:reset\" to rebuild the demo data.");
     const loaded = await loadAll();
     setDb(loaded);
     markClean(loaded);

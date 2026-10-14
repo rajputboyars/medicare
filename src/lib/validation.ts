@@ -85,11 +85,12 @@ export const medicineRequestSchema = z.object({
   mobile: mobileSchema,
   pincode: pincodeSchema,
   prescriptionId: z.string().optional().or(z.literal("")),
+  familyMemberId: z.string().optional().or(z.literal("")),
 });
 
 /** A pharmacy's reply to "Find My Medicine". When it has the medicine it must say price, quantity and prep time. */
 export const requestReplySchema = z.object({
-  response: z.enum(["AVAILABLE", "ALTERNATIVE", "OUT_OF_STOCK"]),
+  response: z.enum(["AVAILABLE", "CAN_ARRANGE", "NOT_AVAILABLE", "ALTERNATIVE_AVAILABLE"]),
   alternative: z.string().trim().max(100).optional(),
   restockEta: z.string().trim().max(60).optional(),
   price: z.coerce.number().positive("Enter the price").max(100000).optional(),
@@ -105,7 +106,7 @@ export const inventoryItemSchema = z.object({
   expiry: z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Invalid date"),
   mrp: z.coerce.number().positive().max(100000),
   sellingPrice: z.coerce.number().positive().max(100000),
-  quantity: z.coerce.number().int().min(0).max(100000),
+  stockQuantity: z.coerce.number().int().min(0).max(100000),
   lowStockThreshold: z.coerce.number().int().min(0).max(1000).default(10),
 }).refine((v) => v.sellingPrice <= v.mrp, { message: "Selling price cannot exceed MRP", path: ["sellingPrice"] });
 
@@ -160,7 +161,8 @@ export const serviceAreaSchema = z.object({
   state: z.string().trim().min(2).max(60),
   district: z.string().trim().max(60).optional(),
   pincode: pincodeSchema.optional(),
-  active: z.boolean().default(false),
+  town: z.string().trim().max(60).optional(),
+  status: z.enum(["ACTIVE", "COMING_SOON", "DISABLED"]).default("COMING_SOON"),
 });
 
 /** Naive CSV parser (quoted fields supported) used by inventory bulk upload. */

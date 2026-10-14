@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest, handle, parseBody, requireUser } from "@/server/http";
-import { attachPrescription, cancelOrder, confirmPayment, getOrderFor, userSafeOrder } from "@/server/services/orders";
-import { repeatOrder, saveFromOrder } from "@/server/services/requests";
+import { attachPrescription, cancelOrder, confirmPayment, getOrderFor, userSafeOrder } from "@/server/features/orders/orders.service";
+import { repeatOrder, saveFromOrder } from "@/server/features/medicine-requests/requests.service";
 import { db, uid } from "@/server/store";
 
 type Ctx = { params: Promise<{ id: string }> };

@@ -13,8 +13,9 @@ export type TrackedRequest = MedicineRequest & {
 
 const REPLY: Record<MedicineRequestResponse["response"], { tone: StatusTone; label: string }> = {
   AVAILABLE: { tone: "success", label: "Has it" },
-  ALTERNATIVE: { tone: "info", label: "Can arrange it" },
-  OUT_OF_STOCK: { tone: "danger", label: "Not available" },
+  ALTERNATIVE_AVAILABLE: { tone: "info", label: "Suggests another" },
+  CAN_ARRANGE: { tone: "info", label: "Can arrange it" },
+  NOT_AVAILABLE: { tone: "danger", label: "Not available" },
 };
 
 /**
@@ -63,10 +64,10 @@ export function RequestTracker({ request: r }: { request: TrackedRequest }) {
               <span className="font-semibold">{p.name}</span>
               {meta && x ? (
                 <span className="flex flex-col items-end gap-0.5">
-                  <StatusBadge tone={meta.tone} icon={x.response === "OUT_OF_STOCK" ? <PackageX className="size-3.5" aria-hidden /> : undefined}>{meta.label}</StatusBadge>
+                  <StatusBadge tone={meta.tone} icon={x.response === "NOT_AVAILABLE" ? <PackageX className="size-3.5" aria-hidden /> : undefined}>{meta.label}</StatusBadge>
                   {x.response === "AVAILABLE" && x.price && <span className="t-caption">{inr(x.price)} · {x.availableQty ?? "?"} units · {x.prepMinutes ?? "?"} min</span>}
-                  {x.response === "ALTERNATIVE" && <span className="t-caption">{x.alternative ?? "Ask the pharmacy"}{x.restockEta ? ` · in ${x.restockEta}` : ""}</span>}
-                  {x.response === "OUT_OF_STOCK" && x.restockEta && <span className="t-caption">Back in {x.restockEta}</span>}
+                  {x.response === "CAN_ARRANGE" && <span className="t-caption">{x.alternative ?? "Ask the pharmacy"}{x.restockEta ? ` · in ${x.restockEta}` : ""}</span>}
+                  {x.response === "NOT_AVAILABLE" && x.restockEta && <span className="t-caption">Back in {x.restockEta}</span>}
                 </span>
               ) : (
                 <StatusBadge tone="neutral" icon={<Clock className="size-3.5" aria-hidden />}>Waiting for reply</StatusBadge>

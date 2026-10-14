@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { SESSION_COOKIE, cookieOptions, signSession } from "@/lib/auth";
 import { registerSchema } from "@/lib/validation";
 import { handle, limit, parseBody } from "@/server/http";
-import { publicUser, registerUser, toSession } from "@/server/services/accounts";
+import { publicUser, registerUser, toSession } from "@/server/features/accounts/accounts.service";
 
 export const POST = handle(async (req: Request) => {
   await limit("register", 5, 60 * 60_000);

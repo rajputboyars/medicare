@@ -9,7 +9,7 @@ import { useLocation } from "@/lib/store";
 import { MedicineCard, pickOffer } from "@/components/medicine/medicine-card";
 import { SortChips, type Strategy } from "@/components/medicine/sort-chips";
 import { Button, EmptyState, Input, LinkButton, Modal, PageTitle, QueryBoundary, SearchBar, Select, SkeletonList } from "@/components/ui";
-import type { MedicineResult } from "@/server/services/finder";
+import type { MedicineResult } from "@/server/features/medicines/finder.service";
 
 function useDebounced<T>(v: T, ms = 300) {
   const [d, setD] = useState(v);

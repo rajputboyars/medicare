@@ -5,7 +5,7 @@ export const PERMISSIONS = {
   "order:create": ["CUSTOMER"],
   "order:read:pharmacy": ["PHARMACY_ADMIN", "PHARMACIST"],
   "order:fulfil": ["PHARMACY_ADMIN", "PHARMACIST"],
-  "prescription:review": ["PHARMACIST", "PHARMACY_ADMIN"],
+  "prescription:review": ["PHARMACIST", "PHARMACY_ADMIN", "SUPER_ADMIN"],
   "inventory:manage": ["PHARMACY_ADMIN", "PHARMACIST"],
   "pharmacy:manage": ["PHARMACY_ADMIN"],
   "pharmacy:finance": ["PHARMACY_ADMIN"],

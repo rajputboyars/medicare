@@ -73,9 +73,15 @@ export const useCart = create<CartState>()(
 interface PrefsState {
   large: boolean;
   highContrast: boolean;
+  /** Bigger buttons with more room between them */
+  controls: boolean;
+  /** Only the main actions: secondary sections are hidden */
+  simple: boolean;
   lang: Lang;
   setLarge: (v: boolean) => void;
   setHighContrast: (v: boolean) => void;
+  setControls: (v: boolean) => void;
+  setSimple: (v: boolean) => void;
   setLang: (l: Lang) => void;
 }
 
@@ -84,9 +90,13 @@ export const usePrefs = create<PrefsState>()(
     (set) => ({
       large: false,
       highContrast: false,
+      controls: false,
+      simple: false,
       lang: "en",
       setLarge: (large) => set({ large }),
       setHighContrast: (highContrast) => set({ highContrast }),
+      setControls: (controls) => set({ controls }),
+      setSimple: (simple) => set({ simple }),
       setLang: (lang) => set({ lang }),
     }),
     { name: "mc-prefs", skipHydration: true },

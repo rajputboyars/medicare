@@ -1,7 +1,7 @@
 "use client";
 
 export class ApiClientError extends Error {
-  constructor(message: string, public status: number, public fields?: Record<string, string>) {
+  constructor(message: string, public status: number, public fields?: Record<string, string>, public code?: string) {
     super(message);
   }
 }
@@ -24,7 +24,7 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   if (!res.ok) {
     const items: { field?: string; message: string }[] = body.errors ?? [];
     const fields = Object.fromEntries(items.filter((e) => e.field).map((e) => [e.field as string, e.message]));
-    throw new ApiClientError(body.message ?? "Something went wrong", res.status, Object.keys(fields).length ? fields : undefined);
+    throw new ApiClientError(body.message ?? "Something went wrong", res.status, Object.keys(fields).length ? fields : undefined, body.errors?.[0]?.code);
   }
   return body.data as T;
 }

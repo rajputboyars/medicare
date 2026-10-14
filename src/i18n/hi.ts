@@ -84,4 +84,7 @@ export const hi: Partial<Record<Key, string>> = {
   staffLogin: "स्टाफ लॉग इन",
   logoutEverywhere: "सभी डिवाइस से लॉग आउट",
   yourDevices: "आपके डिवाइस",
+  nextStep: "आगे",
+  startApplication: "मेरा आवेदन शुरू करें",
+  loginPartnerHint: "फार्मेसी या डिलीवरी पार्टनर? अपने मोबाइल नंबर से लॉग इन करें।",
 };

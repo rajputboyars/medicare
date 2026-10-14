@@ -82,4 +82,7 @@ export const en = {
   staffLogin: "Staff login",
   logoutEverywhere: "Log out of all devices",
   yourDevices: "Your devices",
+  nextStep: "Next",
+  startApplication: "Start my application",
+  loginPartnerHint: "Pharmacy or delivery partner? Sign in with your mobile number.",
 } as const;

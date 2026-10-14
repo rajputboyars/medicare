@@ -12,22 +12,22 @@ import { fmtAgo, fmtDate } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
 import { Button, Card, EmptyState, ErrorState, IconButton, Input, Modal, Notice, PageTitle, QueryBoundary, SearchBar, Select, SkeletonList, StatusBadge, Success } from "@/components/ui";
 
-interface Row { id: string; medicineId: string; name: string; brand: string; generic: string; strength: string; batch: string; expiry: string; mrp: number; sellingPrice: number; quantity: number; lowStockThreshold: number; low: boolean; expiringSoon: boolean; updatedAt?: string }
+interface Row { id: string; medicineId: string; name: string; brand: string; generic: string; strength: string; batch: string; expiry: string; mrp: number; sellingPrice: number; stockQuantity: number; reservedQuantity: number; availableQuantity: number; lowStockThreshold: number; low: boolean; expiringSoon: boolean; lastUpdatedAt?: string }
 type Form = z.input<typeof inventoryItemSchema>;
 type Filter = "all" | "low" | "out" | "expiry";
 
-const matches: Record<Filter, (r: Row) => boolean> = { all: () => true, low: (r) => r.low && r.quantity > 0, out: (r) => r.quantity === 0, expiry: (r) => r.expiringSoon };
+const matches: Record<Filter, (r: Row) => boolean> = { all: () => true, low: (r) => r.low && r.stockQuantity > 0, out: (r) => r.stockQuantity === 0, expiry: (r) => r.expiringSoon };
 const FILTERS: [Filter, string][] = [["all", "All"], ["low", "Low stock"], ["out", "Out of stock"], ["expiry", "Expiring soon"]];
 
 /** Big − / + so the stock can be fixed in a tap. Saves immediately and shows the new number straight away. */
 function StockStepper({ row }: { row: Row }) {
   const qc = useQueryClient();
   const set = useMutation({
-    mutationFn: (quantity: number) => patch(`/api/pharmacy/inventory/${row.id}`, { quantity }),
-    onMutate: async (quantity) => {
+    mutationFn: (stockQuantity: number) => patch(`/api/pharmacy/inventory/${row.id}/stock`, { stockQuantity }),
+    onMutate: async (stockQuantity) => {
       await qc.cancelQueries({ queryKey: ["inventory"] });
       const prev = qc.getQueryData<Row[]>(["inventory"]);
-      qc.setQueryData<Row[]>(["inventory"], (rows) => rows?.map((r) => (r.id === row.id ? { ...r, quantity, low: quantity <= r.lowStockThreshold } : r)));
+      qc.setQueryData<Row[]>(["inventory"], (rows) => rows?.map((r) => (r.id === row.id ? { ...r, stockQuantity, availableQuantity: Math.max(0, stockQuantity - r.reservedQuantity), low: stockQuantity <= r.lowStockThreshold } : r)));
       return { prev };
     },
     onError: (_e, _q, ctx) => ctx?.prev && qc.setQueryData(["inventory"], ctx.prev),
@@ -35,9 +35,9 @@ function StockStepper({ row }: { row: Row }) {
   });
   return (
     <div className="flex items-center gap-1" role="group" aria-label={`Stock of ${row.name}`}>
-      <IconButton label={`One less ${row.name}`} className="border border-line-strong bg-surface" disabled={row.quantity <= 0} onClick={() => set.mutate(row.quantity - 1)}><Minus className="size-5" aria-hidden /></IconButton>
-      <output aria-live="polite" className={clsx("min-w-14 text-center text-xl font-extrabold tabular-nums", row.quantity === 0 && "text-emergency", row.low && row.quantity > 0 && "text-warn")}>{row.quantity}</output>
-      <IconButton label={`One more ${row.name}`} className="border border-line-strong bg-surface" onClick={() => set.mutate(row.quantity + 1)}><Plus className="size-5" aria-hidden /></IconButton>
+      <IconButton label={`One less ${row.name}`} className="border border-line-strong bg-surface" disabled={row.stockQuantity <= row.reservedQuantity} onClick={() => set.mutate(row.stockQuantity - 1)}><Minus className="size-5" aria-hidden /></IconButton>
+      <output aria-live="polite" className={clsx("min-w-14 text-center text-xl font-extrabold tabular-nums", row.stockQuantity === 0 && "text-emergency", row.low && row.stockQuantity > 0 && "text-warn")}>{row.stockQuantity}</output>
+      <IconButton label={`One more ${row.name}`} className="border border-line-strong bg-surface" onClick={() => set.mutate(row.stockQuantity + 1)}><Plus className="size-5" aria-hidden /></IconButton>
     </div>
   );
 }
@@ -47,7 +47,7 @@ function StockForm({ row, onDone }: { row?: Row; onDone: () => void }) {
   const meta = useQuery({ queryKey: ["catalog"], queryFn: () => api<{ catalog: { id: string; name: string; strength: string }[] }>("/api/medicines/meta"), enabled: !row });
   const { register, handleSubmit, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(inventoryItemSchema),
-    defaultValues: row ? { medicineId: row.medicineId, batch: row.batch, expiry: row.expiry.slice(0, 10), mrp: row.mrp, sellingPrice: row.sellingPrice, quantity: row.quantity, lowStockThreshold: row.lowStockThreshold } : { lowStockThreshold: 10 },
+    defaultValues: row ? { medicineId: row.medicineId, batch: row.batch, expiry: row.expiry.slice(0, 10), mrp: row.mrp, sellingPrice: row.sellingPrice, stockQuantity: row.stockQuantity, lowStockThreshold: row.lowStockThreshold } : { lowStockThreshold: 10 },
   });
   const save = useMutation({
     mutationFn: (v: Form) => (row ? put(`/api/pharmacy/inventory/${row.id}`, v) : post("/api/pharmacy/inventory", v)),
@@ -59,7 +59,7 @@ function StockForm({ row, onDone }: { row?: Row; onDone: () => void }) {
         {row ? <p className="t-body font-bold">{row.name} <span className="font-normal">{row.strength}</span></p>
           : <Select label="Medicine" required error={errors.medicineId?.message} {...register("medicineId")}><option value="">Choose…</option>{meta.data?.catalog.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.strength})</option>)}</Select>}
       </div>
-      <Input label="Quantity" required inputMode="numeric" error={errors.quantity?.message} {...register("quantity")} />
+      <Input label="Quantity" required inputMode="numeric" error={errors.stockQuantity?.message} {...register("stockQuantity")} />
       <Input label="Selling price (₹)" required inputMode="decimal" error={errors.sellingPrice?.message} {...register("sellingPrice")} />
       <Input label="MRP (₹)" required inputMode="decimal" error={errors.mrp?.message} {...register("mrp")} />
       <Input label="Expiry date" type="date" required error={errors.expiry?.message} {...register("expiry")} />
@@ -131,9 +131,10 @@ export default function Inventory() {
                         <div className="text-right"><p className="t-number">{inr(r.sellingPrice)}</p><p className="t-caption">MRP {inr(r.mrp)}</p></div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        {r.quantity === 0 ? <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Out of stock</StatusBadge> : r.low && <StatusBadge tone="warning" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Low stock</StatusBadge>}
+                        {r.stockQuantity === 0 ? <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Out of stock</StatusBadge> : r.low && <StatusBadge tone="warning" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Low stock</StatusBadge>}
                         {r.expiringSoon && <StatusBadge tone="warning">Expires {fmtDate(r.expiry)}</StatusBadge>}
-                        <span className="t-caption">Batch {r.batch} · expiry {fmtDate(r.expiry)}{r.updatedAt ? ` · updated ${fmtAgo(r.updatedAt)}` : ""}</span>
+                        {r.reservedQuantity > 0 && <StatusBadge tone="info">{r.reservedQuantity} promised to orders</StatusBadge>}
+                        <span className="t-caption">Batch {r.batch} · expiry {fmtDate(r.expiry)}{r.lastUpdatedAt ? ` · updated ${fmtAgo(r.lastUpdatedAt)}` : ""}</span>
                       </div>
                     </Card>
                   ))}

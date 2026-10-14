@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { handle, notFound, parseBody, requireUser } from "@/server/http";
-import { isPartnerKind, setVerification } from "@/server/services/admin";
+import { isPartnerKind, setVerification } from "@/server/features/admin/admin.service";
 
 const schema = z.object({ status: z.enum(["VERIFIED", "REJECTED", "SUSPENDED", "PENDING"]), note: z.string().trim().max(240).optional() });
 

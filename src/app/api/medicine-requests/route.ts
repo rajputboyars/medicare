@@ -1,7 +1,7 @@
 import { medicineRequestSchema } from "@/lib/validation";
 import { badRequest, currentUser, handle, limit, requireUser, validate } from "@/server/http";
-import { storePrescription } from "@/server/services/prescriptions";
-import { createMedicineRequest, myRequests } from "@/server/services/requests";
+import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
+import { createMedicineRequest, myRequests } from "@/server/features/medicine-requests/requests.service";
 
 export const GET = handle(async () => myRequests(await requireUser()));
 
@@ -25,5 +25,5 @@ export const POST = handle(async (req: Request) => {
     const owner = u?.id ?? `guest:${b.mobile}`;
     photoRxId = storePrescription({ userId: owner, file: { name: photo.name, type: photo.type, bytes: new Uint8Array(await photo.arrayBuffer()) }, requestedMedicines: [b.medicineQuery], source: "REQUEST" }).id;
   }
-  return createMedicineRequest({ ...b, strength: b.strength || undefined, prescriptionId: b.prescriptionId || undefined, photoRxId }, u?.id);
+  return createMedicineRequest({ ...b, strength: b.strength || undefined, prescriptionId: b.prescriptionId || undefined, familyMemberId: b.familyMemberId || undefined, photoRxId }, u?.id);
 });

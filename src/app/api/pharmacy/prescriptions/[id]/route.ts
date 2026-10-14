@@ -1,6 +1,6 @@
 import { prescriptionReviewSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { reviewPrescription } from "@/server/services/orders";
+import { reviewPrescription } from "@/server/features/orders/orders.service";
 
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const u = await requireUser("prescription:review");

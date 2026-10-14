@@ -1,6 +1,6 @@
 import { familyMemberSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { listFamily, saveFamily } from "@/server/services/accounts";
+import { listFamily, saveFamily } from "@/server/features/accounts/accounts.service";
 
 export const GET = handle(async () => listFamily((await requireUser()).id));
 export const POST = handle(async (req: Request) => {

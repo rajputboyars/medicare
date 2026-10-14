@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Step-by-step guide to DawaDost pharmacy partner onboarding, prescriptions, orders, inventory, and payments.">
+  <title>DawaDost Pharmacy | Partner Onboarding &amp; Feature Guide</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8f6;
+      --surface: #fff;
+      --ink: #172b2a;
+      --muted: #5c706e;
+      --line: #dce7e4;
+      --brand: #0d746b;
+      --brand-dark: #07564f;
+      --brand-soft: #e7f5f2;
+      --gold: #9a5b08;
+      --gold-soft: #fff5df;
+      --blue: #315a8b;
+      --blue-soft: #edf4ff;
+      --shadow: 0 12px 34px rgb(23 43 42 / 7%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      scroll-behavior: smooth;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.62; }
+    a { color: var(--brand-dark); }
+    .page { width: min(100% - 32px, 1040px); margin-inline: auto; padding: 28px 0 64px; }
+    .hero {
+      position: relative; overflow: hidden; padding: clamp(26px, 6vw, 58px);
+      border-radius: 28px; color: #fff;
+      background: radial-gradient(ellipse at 95% 0%, #37a99c 0, transparent 35%), linear-gradient(130deg, #084d48, #0c766b 68%, #169284);
+      box-shadow: var(--shadow);
+    }
+    .hero::after { content: "✚"; position: absolute; right: 6%; bottom: -60px; color: rgb(255 255 255 / 9%); font-size: clamp(160px, 30vw, 300px); line-height: 1; font-weight: 800; pointer-events: none; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; }
+    .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: #fff; color: var(--brand); font-size: 23px; }
+    .kicker { margin: 26px 0 8px; color: #bce8df; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { max-width: 760px; margin: 0; font-size: clamp(2.2rem, 7vw, 4.3rem); letter-spacing: -.055em; line-height: 1.04; }
+    .hero p { max-width: 680px; margin: 18px 0 0; color: #e4f4f1; font-size: clamp(1rem, 2.5vw, 1.2rem); }
+    .hero-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; position: relative; z-index: 1; }
+    .hero-links a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid rgb(255 255 255 / 45%); border-radius: 999px; padding: 8px 16px; color: white; text-decoration: none; font-weight: 700; }
+    .hero-links a:hover { background: rgb(255 255 255 / 13%); }
+    .quick-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 34px; }
+    .fact { padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+    .fact strong { display: block; color: var(--brand-dark); font-size: 1.15rem; }
+    .fact span { color: var(--muted); font-size: .9rem; }
+    .section { margin-top: 42px; scroll-margin-top: 20px; }
+    .section-heading { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 16px; }
+    .section-number { flex: 0 0 38px; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 13px; background: var(--brand); color: white; font-weight: 800; }
+    h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -.03em; line-height: 1.2; }
+    h3 { margin: 0; font-size: 1.06rem; line-height: 1.35; }
+    .section-heading p { margin: 5px 0 0; color: var(--muted); }
+    .card { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 4px 18px rgb(23 43 42 / 3%); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .field, .step, .tab { min-width: 0; padding: 17px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+    .field p, .card p, .step p, .tab p { margin: 6px 0 0; color: var(--muted); }
+    .steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; counter-reset: step; }
+    .step { counter-increment: step; }
+    .step::before { content: counter(step, decimal-leading-zero); display: block; margin-bottom: 12px; color: var(--brand); font-size: .8rem; font-weight: 900; letter-spacing: .08em; }
+    .callout { margin-top: 14px; padding: 16px 18px; border-left: 4px solid var(--gold); border-radius: 12px; background: var(--gold-soft); }
+    .callout p { margin: 0; color: #65450f; }
+    .callout.info { border-color: var(--blue); background: var(--blue-soft); }
+    .callout.info p { color: #304e73; }
+    .tag { display: inline-block; margin-bottom: 10px; padding: 4px 9px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-size: .75rem; font-weight: 800; }
+    ul.clean { margin: 10px 0 0; padding-left: 1.2rem; color: var(--muted); }
+    ul.clean li + li { margin-top: 6px; }
+    .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .tab h3 { margin-top: 1px; }
+    footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+    footer p { margin: 0; }
+    footer p + p { margin-top: 6px; }
+    @media (max-width: 680px) {
+      .page { width: min(100% - 22px, 1040px); padding-top: 11px; }
+      .hero { border-radius: 20px; }
+      .quick-facts, .grid, .steps, .tabs { grid-template-columns: 1fr; }
+      .fact { padding: 12px 15px; }
+      .section { margin-top: 32px; }
+      .card { padding: 16px; }
+    }
+    @media print {
+      :root { --bg: #fff; --surface: #fff; --ink: #172b2a; --muted: #485856; --line: #cbd5d2; }
+      body { background: #fff; font-size: 10.5pt; }
+      .page { width: 100%; padding: 0; }
+      .hero { padding: 24px; box-shadow: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .hero::after, .hero-links { display: none; }
+      .quick-facts { margin-bottom: 20px; }
+      .section { margin-top: 23px; break-inside: avoid; }
+      .card, .step, .tab, .fact { box-shadow: none; break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✚</span><span>DawaDost <span style="font-weight:500">Pharmacy</span></span></div>
+      <p class="kicker">Medical store partner handbook</p>
+      <h1>From pharmacy application to fulfilled orders.</h1>
+      <p>A step-by-step guide to pharmacy onboarding, licence verification, prescription review, order preparation, inventory, and settlements in DawaDost.</p>
+      <nav class="hero-links" aria-label="Quick links">
+        <a href="#onboarding">Pharmacy onboarding</a>
+        <a href="#prescriptions">Prescriptions</a>
+        <a href="#orders">Order workflow</a>
+        <a href="#portal">Portal features</a>
+        <a href="http://localhost:3000/partner/pharmacy">Open local application</a>
+      </nav>
+    </header>
+
+    <div class="quick-facts" aria-label="At a glance">
+      <div class="fact"><strong>Apply → Verify</strong><span>New pharmacies are pending and cannot receive orders yet.</span></div>
+      <div class="fact"><strong>Stock → Serve</strong><span>Set up inventory while the licence application is reviewed.</span></div>
+      <div class="fact"><strong>Review → Prepare</strong><span>Prescription orders require pharmacy approval before preparation.</span></div>
+    </div>
+
+    <section class="section" id="onboarding">
+      <div class="section-heading">
+        <span class="section-number">1</span>
+        <div><h2>Apply to become a partner pharmacy</h2><p>Open <a href="http://localhost:3000/partner/pharmacy">/partner/pharmacy</a> or choose the pharmacy partner link from login.</p></div>
+      </div>
+      <div class="card">
+        <div class="grid">
+          <div class="field"><h3>Pharmacy name</h3><p>Required; 3–100 characters.</p></div>
+          <div class="field"><h3>Owner / pharmacist name</h3><p>Required; enter the responsible person’s name.</p></div>
+          <div class="field"><h3>Mobile and email</h3><p>Both required; mobile and email must be valid.</p></div>
+          <div class="field"><h3>Password</h3><p>Required; 8–128 characters, including a letter and a number.</p></div>
+          <div class="field"><h3>Drug licence number</h3><p>Required; 6–60 characters.</p></div>
+          <div class="field"><h3>GSTIN</h3><p>Optional; if supplied, it must be a valid 15-character GSTIN.</p></div>
+          <div class="field"><h3>Shop location</h3><p>Required shop address, pincode, and district.</p></div>
+          <div class="field"><h3>Service area and hours</h3><p>Enter service pincodes (defaults to the shop pincode) and opening/closing times.</p></div>
+        </div>
+        <div class="callout"><p><b>Required declaration:</b> confirm licence details are correct, a registered pharmacist supervises dispensing, and the pharmacy will follow applicable pharmacy laws. Submission creates a pending application; duplicate mobile, email, or drug licence details are rejected. Registration is limited to three attempts per hour.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="verification">
+      <div class="section-heading">
+        <span class="section-number">2</span>
+        <div><h2>Licence review and sign-in</h2><p>The platform team must verify the pharmacy before it can accept customer orders.</p></div>
+      </div>
+      <div class="card">
+        <ul class="clean">
+          <li>After submitting, the confirmation says the team will verify the drug licence.</li>
+          <li>You can log in at <a href="http://localhost:3000/login">/login</a> with the email or mobile and password used during registration.</li>
+          <li>While verification is pending, you can set up inventory; the pharmacy is not yet available to receive orders.</li>
+          <li>An administrator reviews pharmacies in <b>Admin → Verification queue → Pharmacies</b>. The queue reminds reviewers to check the drug licence against state drug-control records and confirm a registered pharmacist.</li>
+          <li>Verification decisions are audit logged. Once verified, the pharmacy owner can enable order acceptance in Settings.</li>
+        </ul>
+        <div class="callout info"><p><b>Development demo:</b> In non-production builds, login provides demo account buttons including Pharmacy owner and Pharmacist. The displayed development password is for local demo access; it is separate from a new partner application.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="portal">
+      <div class="section-heading">
+        <span class="section-number">3</span>
+        <div><h2>Explore the Pharmacy Portal</h2><p>The portal brings daily work and business summaries together.</p></div>
+      </div>
+      <div class="tabs">
+        <article class="tab"><span class="tag">/pharmacy</span><h3>Dashboard</h3><p>Prescription reviews, new and in-progress orders, delivered-today counts, revenue, low-stock alerts, and open medicine requests.</p></article>
+        <article class="tab"><span class="tag">/pharmacy/orders</span><h3>Orders</h3><p>Queues for prescription review, new orders, work in progress, and order history.</p></article>
+        <article class="tab"><span class="tag">/pharmacy/prescriptions</span><h3>Prescription verification</h3><p>Prescription orders awaiting review and “Call me” prescription callbacks.</p></article>
+        <article class="tab"><span class="tag">/pharmacy/inventory</span><h3>Inventory</h3><p>Manage medicine batches, expiry, MRP, selling price, quantity, and low-stock thresholds. Add stock individually or import CSV.</p></article>
+        <article class="tab"><span class="tag">/pharmacy/requests</span><h3>Medicine requests</h3><p>Respond to nearby customers asking for medicines: available, alternative, or out of stock.</p></article>
+        <article class="tab"><span class="tag">Portal tools</span><h3>Customers, payments, reports, settings</h3><p>View masked customer records, payment and settlement summaries, performance reports, and store configuration.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="prescriptions">
+      <div class="section-heading">
+        <span class="section-number">4</span>
+        <div><h2>Review prescription orders</h2><p>Prescription medicines require pharmacist review before the order can proceed to preparation.</p></div>
+      </div>
+      <div class="steps">
+        <article class="step"><h3>Open the review queue</h3><p>From the dashboard or Prescription Verification page, open a prescription order and its uploaded prescription.</p></article>
+        <article class="step"><h3>Check the prescription</h3><p>Check the doctor’s name and registration, date, patient, and every medicine and strength against the order.</p></article>
+        <article class="step"><h3>Approve when valid</h3><p>Select <b>Approve prescription</b>. The order can then move into the new-order queue for confirmation.</p></article>
+        <article class="step"><h3>Ask for a clearer copy or reject</h3><p>If unclear, ask the customer for a clearer copy with a reason. If invalid, reject with a reason. The reason is shown to the customer.</p></article>
+      </div>
+      <div class="callout"><p><b>Important:</b> The portal explicitly instructs pharmacy staff not to change or substitute medicines on their own. If any detail is unclear, request clarification.</p></div>
+      <div class="card" style="margin-top:14px">
+        <h3>“Call me” prescriptions</h3>
+        <p>For a call-me prescription, view the prescription and call the customer if a callback number is available. Confirm the medicines and delivery details, invite them to place the order in the app, then mark it verified or reject it with a reason. Call-me requests are not ordinary confirmed delivery orders.</p>
+      </div>
+    </section>
+
+    <section class="section" id="orders">
+      <div class="section-heading">
+        <span class="section-number">5</span>
+        <div><h2>Process an order and hand it to delivery</h2><p>Order cards show the order status, patient/order details, items, payment summary, and available next action.</p></div>
+      </div>
+      <div class="steps">
+        <article class="step"><h3>Accept and confirm</h3><p>For a new non-prescription order, or after the prescription is approved, select <b>Accept &amp; confirm order</b>.</p></article>
+        <article class="step"><h3>Start preparing</h3><p>When the order is confirmed and the pharmacy is ready to fulfil it, select <b>Start preparing</b>.</p></article>
+        <article class="step"><h3>Mark ready for pickup</h3><p>When the parcel is prepared, select <b>Mark ready for pickup</b>. The order becomes eligible for rider assignment.</p></article>
+        <article class="step"><h3>Arrange rider pickup</h3><p>Assign the nearest rider or wait for an online rider to accept the offer. The pharmacy order card displays the pickup code to give the rider at handoff.</p></article>
+      </div>
+      <div class="callout info"><p><b>Order status path:</b> New / prescription review → confirmed → preparing → ready for pickup → rider assigned → picked up → out for delivery → delivered. Some states are advanced by the customer, pharmacist, rider, or platform rather than by the pharmacy portal.</p></div>
+      <div class="card" style="margin-top:14px">
+        <h3>Reject or cancel</h3>
+        <p>Eligible orders have a <b>Reject / cancel…</b> action that requires a reason. The allowed action and order-state rules depend on the current status. After a rider has picked up an order, pharmacy staff cannot use the ordinary pre-pickup cancellation path.</p>
+      </div>
+    </section>
+
+    <section class="section" id="inventory">
+      <div class="section-heading">
+        <span class="section-number">6</span>
+        <div><h2>Keep inventory accurate</h2><p>Inventory data feeds availability for customers and can prevent overselling.</p></div>
+      </div>
+      <div class="card">
+        <p>Add or update a catalogue medicine with its batch, expiry date, MRP, selling price, quantity, and low-stock alert threshold. Use the CSV template and upload for bulk entry; CSV imports support up to 2,000 rows per upload, and invalid rows are reported with row numbers.</p>
+        <ul class="clean">
+          <li>Filter by medicine name, brand, or generic name; filter to low-stock items.</li>
+          <li>Update a quantity directly from the inventory list and save the change.</li>
+          <li>The app flags low stock and items approaching expiry (within 90 days).</li>
+          <li>When customers request an unavailable medicine, respond “We have it,” suggest an alternative, or mark it out of stock. Add available medicines to inventory so customers can order them.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="finance">
+      <div class="section-heading">
+        <span class="section-number">7</span>
+        <div><h2>Payments, settlements, and reports</h2><p>Use the portal to review transaction and operating summaries.</p></div>
+      </div>
+      <div class="grid">
+        <article class="card"><h3>Payments &amp; settlements</h3><p>Review paid amounts, COD due for rider collection, online payments awaiting payment, refunds, and settlement rows with period, order count, gross, commission, net payout, and status.</p></article>
+        <article class="card"><h3>Reports</h3><p>Review order totals, delivered and cancelled counts, cancellation rate, prescription-order share, revenue and order charts for the last seven days, top medicines, and repeat-order share.</p></article>
+      </div>
+      <div class="callout"><p><b>Settlement boundary:</b> the platform creates settlements for delivered orders and the portal shows their status. It does not provide a pharmacy-side manual payout request or payment processing control in this flow.</p></div>
+    </section>
+
+    <section class="section" id="settings">
+      <div class="section-heading">
+        <span class="section-number">8</span>
+        <div><h2>Configure store settings</h2><p>Only the pharmacy owner can change these settings.</p></div>
+      </div>
+      <div class="card">
+        <ul class="clean">
+          <li>Set opening and closing hours.</li>
+          <li>Set service pincodes and a delivery radius from 1 to 30 km.</li>
+          <li>Choose whether to offer priority delivery.</li>
+          <li>Turn <b>Accepting orders</b> on or off after the pharmacy is verified; it cannot be enabled while verification is pending.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="boundaries">
+      <div class="section-heading">
+        <span class="section-number">i</span>
+        <div><h2>Operational and privacy boundaries</h2><p>Current implementation details to keep in mind.</p></div>
+      </div>
+      <div class="card">
+        <ul class="clean">
+          <li>Pharmacy accounts only manage their own pharmacy’s orders, stock, and settings.</li>
+          <li>Prescription content is available to pharmacy users involved in review and fulfilment; handle it as sensitive health information.</li>
+          <li>Customer records show masked phone numbers in the customer list.</li>
+          <li>The rider receives parcel count and delivery/handoff information, not medicine names or prescription contents.</li>
+          <li>Self-registration captures licence number and a declaration, but does not include a licence-document upload or automated licence verification. A platform administrator performs the implemented review.</li>
+          <li>GSTIN is optional. The form does not request bank account details or a pharmacist document upload.</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      <p><b>DawaDost Pharmacy</b> · Partner onboarding and feature guide</p>
+      <p>Implementation references: <a href="../src/app/(auth)/partner/pharmacy/page.tsx">pharmacy application</a> · <a href="../src/components/pharmacy/order-queue.tsx">order queue</a> · <a href="../src/app/pharmacy/inventory/page.tsx">inventory</a> · <a href="../src/app/pharmacy/payments/page.tsx">payments</a> · <a href="../src/app/pharmacy/settings/page.tsx">settings</a></p>
+    </footer>
+  </main>
+</body>
+</html>

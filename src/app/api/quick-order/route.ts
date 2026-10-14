@@ -1,6 +1,6 @@
 import { quickOrderSchema } from "@/lib/validation";
 import { badRequest, handle, limit, validate } from "@/server/http";
-import { quickOrder } from "@/server/services/prescriptions";
+import { quickOrder } from "@/server/features/prescriptions/prescriptions.service";
 
 /** Works without an account: mobile + address + photo. Heavily rate limited. */
 export const POST = handle(async (req: Request) => {

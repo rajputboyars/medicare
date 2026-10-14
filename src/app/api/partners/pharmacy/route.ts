@@ -1,6 +1,6 @@
 import { pharmacyRegistrationSchema } from "@/lib/validation";
 import { handle, limit, parseBody } from "@/server/http";
-import { registerPharmacy } from "@/server/services/admin";
+import { registerPharmacy } from "@/server/features/admin/admin.service";
 
 export const POST = handle(async (req: Request) => {
   await limit("partner-register", 3, 60 * 60_000);

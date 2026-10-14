@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { deliveryOtpSchema } from "@/lib/validation";
 import { handle, limit, parseBody, requireUser } from "@/server/http";
-import { acceptDelivery, riderStep } from "@/server/services/delivery";
+import { acceptDelivery, riderStep } from "@/server/features/delivery/delivery.service";
 
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("accept") }),

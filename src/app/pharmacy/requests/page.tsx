@@ -6,16 +6,17 @@ import clsx from "clsx";
 import { api, post } from "@/lib/api";
 import { Button, Card, EmptyState, Input, Modal, PageTitle, QueryBoundary, SkeletonList, StatusBadge } from "@/components/ui";
 import { useViewPrescription } from "@/components/pharmacy/order-queue";
+import type { RequestResponseKind } from "@/lib/types";
 
 interface Req {
   id: string; medicineQuery: string; strength?: string; quantity: number; pincode: string; createdAt: string; status: string;
   ageMinutes: number; distanceKm?: number; area: string; sharedFileId?: string; hasPrescription: boolean; hasPhoto: boolean; repliesFromOthers: number;
-  myResponse?: { response: "AVAILABLE" | "ALTERNATIVE" | "OUT_OF_STOCK"; alternative?: string; restockEta?: string; price?: number; availableQty?: number; prepMinutes?: number };
+  myResponse?: { response: RequestResponseKind; alternative?: string; restockEta?: string; price?: number; availableQty?: number; prepMinutes?: number };
 }
-type Kind = "AVAILABLE" | "ALTERNATIVE" | "OUT_OF_STOCK";
+type Kind = "AVAILABLE" | "CAN_ARRANGE" | "NOT_AVAILABLE";
 
 const age = (m: number) => (m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} hr ago` : `${Math.round(m / 1440)} day ago`);
-const REPLIED: Record<Kind, string> = { AVAILABLE: "You said: available", ALTERNATIVE: "You said: can arrange", OUT_OF_STOCK: "You said: not available" };
+const REPLIED: Record<RequestResponseKind, string> = { ALTERNATIVE_AVAILABLE: "You suggested another", AVAILABLE: "You said: available", CAN_ARRANGE: "You said: can arrange", NOT_AVAILABLE: "You said: not available" };
 
 function ReplyModal({ r, kind, onClose }: { r: Req; kind: Kind | null; onClose: () => void }) {
   const qc = useQueryClient();
@@ -27,11 +28,11 @@ function ReplyModal({ r, kind, onClose }: { r: Req; kind: Kind | null; onClose: 
   const send = useMutation({
     mutationFn: () => post(`/api/pharmacy/requests/${r.id}`, kind === "AVAILABLE"
       ? { response: kind, price: Number(price), availableQty: Number(qty), prepMinutes: Number(prep) }
-      : kind === "ALTERNATIVE" ? { response: kind, alternative: note || "Can arrange", restockEta: when || undefined } : { response: kind }),
+      : kind === "CAN_ARRANGE" ? { response: kind, alternative: note || "Can arrange", restockEta: when || undefined } : { response: kind }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["pharmacy-requests"] }); qc.invalidateQueries({ queryKey: ["pharmacy-dashboard"] }); onClose(); },
   });
-  const ready = kind === "AVAILABLE" ? Number(price) > 0 && Number(qty) > 0 && Number(prep) > 0 : kind === "ALTERNATIVE" ? when.trim().length > 0 : true;
-  const title = kind === "AVAILABLE" ? "Yes, we have it" : kind === "ALTERNATIVE" ? "We can arrange it" : "We do not have it";
+  const ready = kind === "AVAILABLE" ? Number(price) > 0 && Number(qty) > 0 && Number(prep) > 0 : kind === "CAN_ARRANGE" ? when.trim().length > 0 : true;
+  const title = kind === "AVAILABLE" ? "Yes, we have it" : kind === "CAN_ARRANGE" ? "We can arrange it" : "We do not have it";
   return (
     <Modal open={!!kind} onClose={onClose} title={title} description={`${r.medicineQuery}${r.strength ? ` ${r.strength}` : ""} × ${r.quantity}`}>
       <form onSubmit={(e) => { e.preventDefault(); if (ready) send.mutate(); }} className="space-y-3">
@@ -41,14 +42,14 @@ function ReplyModal({ r, kind, onClose }: { r: Req; kind: Kind | null; onClose: 
           <Input label="Time to get it ready (minutes)" required inputMode="numeric" value={prep} onChange={(e) => setPrep(e.target.value)} />
           <p className="t-caption">Add it to Inventory too, so the customer can order it straight away.</p>
         </>}
-        {kind === "ALTERNATIVE" && <>
+        {kind === "CAN_ARRANGE" && <>
           <Input label="How soon can you get it?" required placeholder="e.g. Tomorrow morning" value={when} onChange={(e) => setWhen(e.target.value)} />
           <Input label="Note (optional)" placeholder="e.g. Same salt, other brand" value={note} onChange={(e) => setNote(e.target.value)} />
         </>}
-        {kind === "OUT_OF_STOCK" && <p className="t-body">The customer will see that you do not have this medicine.</p>}
+        {kind === "NOT_AVAILABLE" && <p className="t-body">The customer will see that you do not have this medicine.</p>}
         {send.isError && <p role="alert" className="text-sm font-semibold text-emergency">{(send.error as Error).message}</p>}
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button type="submit" loading={send.isPending} disabled={!ready} variant={kind === "OUT_OF_STOCK" ? "danger" : "primary"}>Send reply</Button>
+          <Button type="submit" loading={send.isPending} disabled={!ready} variant={kind === "NOT_AVAILABLE" ? "danger" : "primary"}>Send reply</Button>
           <Button type="button" variant="secondary" onClick={onClose}>Go back</Button>
         </div>
       </form>
@@ -68,7 +69,7 @@ function RequestCard({ r }: { r: Req }) {
           <p className="t-support">Quantity: <b>{r.quantity}</b></p>
         </div>
         {fresh ? <StatusBadge tone="warning" icon={<Clock className="size-3.5" aria-hidden />}>New · needs your answer</StatusBadge>
-          : <StatusBadge tone={r.myResponse!.response === "OUT_OF_STOCK" ? "neutral" : "success"}>{REPLIED[r.myResponse!.response]}</StatusBadge>}
+          : <StatusBadge tone={r.myResponse!.response === "NOT_AVAILABLE" ? "neutral" : "success"}>{REPLIED[r.myResponse!.response]}</StatusBadge>}
       </div>
       <p className="t-support flex flex-wrap gap-x-4 gap-y-1">
         <span className="inline-flex items-center gap-1"><MapPin className="size-4" aria-hidden />{r.area}{r.distanceKm !== undefined ? ` · ${r.distanceKm.toFixed(1)} km` : ""}</span>
@@ -80,8 +81,8 @@ function RequestCard({ r }: { r: Req }) {
       {r.myResponse?.response === "AVAILABLE" && <p className="t-support">₹{r.myResponse.price} · {r.myResponse.availableQty} available · ready in {r.myResponse.prepMinutes} min</p>}
       <div className="grid gap-2 sm:grid-cols-3">
         <Button onClick={() => setKind("AVAILABLE")}><CheckCircle2 className="size-5" aria-hidden /> Available</Button>
-        <Button variant="secondary" onClick={() => setKind("ALTERNATIVE")}><Truck className="size-5" aria-hidden /> Can arrange</Button>
-        <Button variant="danger-outline" onClick={() => setKind("OUT_OF_STOCK")}><XCircle className="size-5" aria-hidden /> Not available</Button>
+        <Button variant="secondary" onClick={() => setKind("CAN_ARRANGE")}><Truck className="size-5" aria-hidden /> Can arrange</Button>
+        <Button variant="danger-outline" onClick={() => setKind("NOT_AVAILABLE")}><XCircle className="size-5" aria-hidden /> Not available</Button>
       </div>
       {kind && <ReplyModal r={r} kind={kind} onClose={() => setKind(null)} />}
     </Card>

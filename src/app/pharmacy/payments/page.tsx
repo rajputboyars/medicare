@@ -7,7 +7,7 @@ import { Badge, Card, EmptyState, PageTitle, QueryBoundary, SkeletonList, Stat }
 import type { Payment, Settlement } from "@/lib/types";
 
 interface Data { totals: { paid: number; codDue: number; pendingOnline: number; refunded: number }; payments: (Payment & { orderCode: string })[]; settlements: Settlement[] }
-const tone = { PAID: "green", COD_DUE: "amber", PENDING: "amber", REFUNDED: "gray", FAILED: "red" } as const;
+const tone = { PAID: "green", AUTHORIZED: "blue", PENDING: "amber", REFUNDED: "gray", PARTIALLY_REFUNDED: "gray", FAILED: "red" } as const;
 
 export default function Payments() {
   const q = useQuery({ queryKey: ["pharmacy-payments"], queryFn: () => api<Data>("/api/pharmacy/payments") });

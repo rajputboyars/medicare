@@ -13,7 +13,8 @@ import { Button, Card, EmptyState, LinkButton, Notice, PageTitle, QueryBoundary,
 import type { Prescription, PrescriptionStatus } from "@/lib/types";
 
 const STATUS: Record<PrescriptionStatus, { label: string; tone: StatusTone; icon: typeof Clock }> = {
-  RECEIVED: { label: "Received", tone: "neutral", icon: Clock },
+  UPLOADED: { label: "Received", tone: "neutral", icon: Clock },
+  EXPIRED: { label: "Expired. Please upload a new one", tone: "neutral", icon: Clock },
   UNDER_REVIEW: { label: "Pharmacist is checking", tone: "warning", icon: FileSearch },
   APPROVED: { label: "Approved", tone: "success", icon: CheckCircle2 },
   REJECTED: { label: "Could not be verified", tone: "danger", icon: XCircle },

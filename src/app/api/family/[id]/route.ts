@@ -1,6 +1,6 @@
 import { familyMemberSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { deleteFamily, saveFamily } from "@/server/services/accounts";
+import { deleteFamily, saveFamily } from "@/server/features/accounts/accounts.service";
 
 type Ctx = { params: Promise<{ id: string }> };
 

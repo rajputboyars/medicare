@@ -1,6 +1,6 @@
 import { platformSettingsSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { updatePlatformSettings } from "@/server/services/admin";
+import { updatePlatformSettings } from "@/server/features/admin/admin.service";
 import { settings } from "@/server/store";
 
 export const GET = handle(async () => {

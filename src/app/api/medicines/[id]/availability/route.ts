@@ -1,6 +1,6 @@
 import { pincodeSchema } from "@/lib/validation";
 import { handle, notFound, validate } from "@/server/http";
-import { offersFor, pincodeCenter } from "@/server/services/finder";
+import { offersFor, pincodeCenter } from "@/server/features/medicines/finder.service";
 import { db } from "@/server/store";
 
 export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {

@@ -15,7 +15,7 @@ export const when = (v: unknown) => (v ? fmtDateTime(String(v)) : "—");
 export const yesNo = (v: unknown) => (v ? "Yes" : "No");
 const TONES: Record<string, StatusTone> = {
   DELIVERED: "success", PAID: "success", VERIFIED: "success", RESOLVED: "success", FOUND: "success", AVAILABLE: "success",
-  CANCELLED: "danger", FAILED: "danger", REJECTED: "danger", SUSPENDED: "danger", OPEN: "warning", PENDING: "warning", COD_DUE: "warning",
+  CANCELLED: "danger", FAILED: "danger", REJECTED: "danger", SUSPENDED: "danger", OPEN: "warning", PENDING: "warning", AUTHORIZED: "info", PARTIALLY_REFUNDED: "neutral",
   PROCESSING: "info", IN_PROGRESS: "info", REFUNDED: "neutral",
 };
 export const status = (v: unknown) => <StatusBadge tone={TONES[String(v)] ?? "info"}>{String(v).replace(/_/g, " ").toLowerCase()}</StatusBadge>;

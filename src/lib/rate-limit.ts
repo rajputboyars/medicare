@@ -4,10 +4,13 @@
  */
 export interface RateLimiter {
   hit(key: string, limit: number, windowMs: number): { allowed: boolean; remaining: number; retryAfterSec: number };
+  /** Forget all counters (tests). */
+  reset?(): void;
 }
 
 export class MemoryRateLimiter implements RateLimiter {
   private buckets = new Map<string, { count: number; resetAt: number }>();
+  reset() { this.buckets.clear(); }
   hit(key: string, limit: number, windowMs: number) {
     const now = Date.now();
     let b = this.buckets.get(key);

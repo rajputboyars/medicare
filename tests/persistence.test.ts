@@ -56,12 +56,13 @@ describe.skipIf(!up)("MongoDB persistence", () => {
   it("keeps secrets that are select:false (password hashes, OTPs, file keys)", async () => {
     const loaded = await P.__testing.loadAll();
     expect(loaded.users.every((u) => u.passwordHash.startsWith("$2"))).toBe(true);
-    expect(loaded.orders.every((o) => /^\d{4}$/.test(o.deliveryOtp) && /^\d{4}$/.test(o.pickupOtp))).toBe(true);
+    expect(loaded.deliveries.every((d) => d.otpNonce.length > 8 && /^[0-9a-f]{64}$/.test(d.pickupOtpHash) && /^[0-9a-f]{64}$/.test(d.deliveryOtpHash))).toBe(true);
+    expect(JSON.stringify(loaded.deliveries)).not.toMatch(/"(pickupOtp|deliveryOtp)"/); // no plain code anywhere
     expect(loaded.prescriptions.every((p) => p.fileKey.length > 3)).toBe(true);
   });
 
   it("writes only what changed, survives a 'restart', and handles deletes", async () => {
-    const { createOrder, advanceAsPharmacy } = await import("@/server/services/orders");
+    const { createOrder, advanceAsPharmacy } = await import("@/server/features/orders/orders.service");
     const { MED } = seedMod;
     const o = createOrder({ id: "u_1", name: "Asha", role: "CUSTOMER" }, { pharmacyId: "ph_1", addressId: "ad_1", deliveryType: "NORMAL", paymentMethod: "COD", items: [{ medicineId: MED.PARACETAMOL, quantity: 2 }] });
     advanceAsPharmacy({ id: "u_rx", name: "K", role: "PHARMACIST", partnerId: "ph_1" }, o.id, "confirm");
@@ -75,7 +76,8 @@ describe.skipIf(!up)("MongoDB persistence", () => {
     const same = reloaded.orders.find((x) => x.id === o.id)!;
     expect(same.status).toBe("CONFIRMED");
     expect(same.items).toHaveLength(1);
-    expect(same.stockReserved).toBe(true);
+    expect(same.stockState).toBe("CONSUMED");
+    expect(same.statusHistory.map((h) => h.status)).toEqual(o.statusHistory.map((h) => h.status)); // timeline comes back from the OrderStatusHistory collection
     expect(strip(same)).toEqual(strip(o));
 
     S.db().carts.push({ id: "c1", userId: "u_1", pharmacyId: "ph_1", items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }], updatedAt: new Date().toISOString() });

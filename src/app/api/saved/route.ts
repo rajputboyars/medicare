@@ -1,6 +1,6 @@
 import { savedMedicinesSchema } from "@/lib/validation";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { listSaved, saveMedicines } from "@/server/services/requests";
+import { listSaved, saveMedicines } from "@/server/features/medicine-requests/requests.service";
 
 export const GET = handle(async () => listSaved((await requireUser("order:create")).id));
 export const POST = handle(async (req: Request) => {

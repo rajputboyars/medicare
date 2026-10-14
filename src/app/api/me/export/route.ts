@@ -1,5 +1,5 @@
 import { handle, requireUser } from "@/server/http";
-import { exportUserData } from "@/server/services/accounts";
+import { exportUserData } from "@/server/features/accounts/accounts.service";
 import { audit } from "@/server/store";
 
 export const GET = handle(async () => {

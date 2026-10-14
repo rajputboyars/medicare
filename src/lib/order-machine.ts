@@ -20,15 +20,15 @@ const STAFF = ["PHARMACY_ADMIN", "PHARMACIST"] as const;
 export const TRANSITIONS: Record<OrderStatus, readonly Edge[]> = {
   PENDING: [
     { to: "CONFIRMED", by: STAFF },
-    { to: "CANCELLED", by: ["CUSTOMER", ...STAFF, "SUPER_ADMIN"] },
+    { to: "CANCELLED", by: ["CUSTOMER", ...STAFF, "SUPER_ADMIN", "SYSTEM"] }, // SYSTEM: unpaid online order expired
   ],
   PRESCRIPTION_REVIEW: [
-    { to: "PRESCRIPTION_APPROVED", by: ["PHARMACIST", "PHARMACY_ADMIN"] },
-    { to: "CANCELLED", by: ["CUSTOMER", ...STAFF, "SUPER_ADMIN"] },
+    { to: "PRESCRIPTION_APPROVED", by: ["PHARMACIST", "PHARMACY_ADMIN", "SUPER_ADMIN"] },
+    { to: "CANCELLED", by: ["CUSTOMER", ...STAFF, "SUPER_ADMIN", "SYSTEM"] },
   ],
   PRESCRIPTION_APPROVED: [
     { to: "CONFIRMED", by: STAFF },
-    { to: "CANCELLED", by: ["CUSTOMER", ...STAFF, "SUPER_ADMIN"] },
+    { to: "CANCELLED", by: ["CUSTOMER", ...STAFF, "SUPER_ADMIN", "SYSTEM"] },
   ],
   CONFIRMED: [
     { to: "PREPARING", by: STAFF },

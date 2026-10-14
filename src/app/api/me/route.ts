@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { updateConsent } from "@/server/services/accounts";
+import { updateConsent } from "@/server/features/accounts/accounts.service";
 
 const schema = z.object({ healthData: z.boolean().optional(), marketing: z.boolean().optional(), language: z.enum(["en", "hi"]).optional() });
 

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A step-by-step guide to DawaDost delivery partner onboarding, deliveries, and earnings.">
+  <title>DawaDost Rider | Onboarding &amp; Feature Guide</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8f6;
+      --surface: #fff;
+      --ink: #172b2a;
+      --muted: #5c706e;
+      --line: #dce7e4;
+      --brand: #0d746b;
+      --brand-dark: #07564f;
+      --brand-soft: #e7f5f2;
+      --gold: #9a5b08;
+      --gold-soft: #fff5df;
+      --blue: #315a8b;
+      --blue-soft: #edf4ff;
+      --shadow: 0 12px 34px rgb(23 43 42 / 7%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      scroll-behavior: smooth;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.62; }
+    a { color: var(--brand-dark); }
+    .page { width: min(100% - 32px, 1040px); margin-inline: auto; padding: 28px 0 64px; }
+    .hero {
+      position: relative; overflow: hidden; padding: clamp(26px, 6vw, 58px);
+      border-radius: 28px; color: #fff;
+      background: radial-gradient(ellipse at 95% 0%, #37a99c 0, transparent 35%), linear-gradient(130deg, #084d48, #0c766b 68%, #169284);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "✚"; position: absolute; right: 6%; bottom: -60px; color: rgb(255 255 255 / 9%);
+      font-size: clamp(160px, 30vw, 300px); line-height: 1; font-weight: 800; pointer-events: none;
+    }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; }
+    .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: #fff; color: var(--brand); font-size: 23px; }
+    .kicker { margin: 26px 0 8px; color: #bce8df; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { max-width: 720px; margin: 0; font-size: clamp(2.2rem, 7vw, 4.3rem); letter-spacing: -.055em; line-height: 1.04; }
+    .hero p { max-width: 650px; margin: 18px 0 0; color: #e4f4f1; font-size: clamp(1rem, 2.5vw, 1.2rem); }
+    .hero-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; position: relative; z-index: 1; }
+    .hero-links a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid rgb(255 255 255 / 45%); border-radius: 999px; padding: 8px 16px; color: white; text-decoration: none; font-weight: 700; }
+    .hero-links a:hover { background: rgb(255 255 255 / 13%); }
+    .quick-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 34px; }
+    .fact { padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+    .fact strong { display: block; color: var(--brand-dark); font-size: 1.15rem; }
+    .fact span { color: var(--muted); font-size: .9rem; }
+    .section { margin-top: 42px; scroll-margin-top: 20px; }
+    .section-heading { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 16px; }
+    .section-number { flex: 0 0 38px; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 13px; background: var(--brand); color: white; font-weight: 800; }
+    h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -.03em; line-height: 1.2; }
+    h3 { margin: 0; font-size: 1.06rem; line-height: 1.35; }
+    .section-heading p { margin: 5px 0 0; color: var(--muted); }
+    .card { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 4px 18px rgb(23 43 42 / 3%); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .field { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 14px; }
+    .field p, .card p { margin: 6px 0 0; color: var(--muted); }
+    .field b { color: var(--ink); }
+    .steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; counter-reset: step; }
+    .step { counter-increment: step; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+    .step::before { content: counter(step, decimal-leading-zero); display: block; margin-bottom: 12px; color: var(--brand); font-size: .8rem; font-weight: 900; letter-spacing: .08em; }
+    .step p { margin: 7px 0 0; color: var(--muted); }
+    .callout { margin-top: 14px; padding: 16px 18px; border-left: 4px solid var(--gold); border-radius: 12px; background: var(--gold-soft); }
+    .callout p { margin: 0; color: #65450f; }
+    .callout.info { border-color: var(--blue); background: var(--blue-soft); }
+    .callout.info p { color: #304e73; }
+    .pill { display: inline-block; margin: 0 4px 4px 0; padding: 3px 9px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-size: .78rem; font-weight: 800; }
+    ul.clean { margin: 10px 0 0; padding-left: 1.2rem; color: var(--muted); }
+    ul.clean li + li { margin-top: 5px; }
+    .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .tab { padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+    .tab p { margin: 7px 0 0; color: var(--muted); }
+    .tag { display: inline-block; margin-bottom: 10px; padding: 4px 9px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-size: .75rem; font-weight: 800; }
+    .not-built { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 24px; margin: 12px 0 0; padding-left: 1.2rem; color: var(--muted); }
+    footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+    footer p + p { margin-top: 6px; }
+    @media (max-width: 680px) {
+      .page { width: min(100% - 22px, 1040px); padding-top: 11px; }
+      .hero { border-radius: 20px; }
+      .quick-facts, .grid, .steps, .tabs, .not-built { grid-template-columns: 1fr; }
+      .fact { padding: 12px 15px; }
+      .section { margin-top: 32px; }
+      .card { padding: 16px; }
+    }
+    @media print {
+      :root { --bg: #fff; --surface: #fff; --ink: #172b2a; --muted: #485856; --line: #cbd5d2; }
+      body { background: #fff; font-size: 10.5pt; }
+      .page { width: 100%; padding: 0; }
+      .hero { padding: 24px; box-shadow: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .hero::after, .hero-links { display: none; }
+      .quick-facts { margin-bottom: 20px; }
+      .section { margin-top: 23px; break-inside: avoid; }
+      .card, .step, .tab, .fact { box-shadow: none; break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✚</span><span>DawaDost <span style="font-weight:500">Rider</span></span></div>
+      <p class="kicker">Delivery partner handbook</p>
+      <h1>From application to every delivery.</h1>
+      <p>A clear, step-by-step guide to rider onboarding, the delivery workflow, privacy, and earnings in the DawaDost app.</p>
+      <nav class="hero-links" aria-label="Quick links">
+        <a href="#onboarding">Rider onboarding</a>
+        <a href="#delivery">Delivery steps</a>
+        <a href="#earnings">History &amp; earnings</a>
+        <a href="http://localhost:3000/partner/rider">Open local application</a>
+      </nav>
+    </header>
+
+    <div class="quick-facts" aria-label="At a glance">
+      <div class="fact"><strong>Apply → Verify</strong><span>New applications start pending and offline.</span></div>
+      <div class="fact"><strong>Accept → Deliver</strong><span>Only verified, online riders see available jobs.</span></div>
+      <div class="fact"><strong>Code confirmed</strong><span>Pickup and delivery use separate 4-digit codes.</span></div>
+    </div>
+
+    <section class="section" id="onboarding">
+      <div class="section-heading">
+        <span class="section-number">1</span>
+        <div><h2>Apply to become a rider</h2><p>Submit the delivery-partner form at <a href="http://localhost:3000/partner/rider">/partner/rider</a>.</p></div>
+      </div>
+      <div class="card">
+        <div class="grid">
+          <div class="field"><h3>Your name</h3><p>Required; 2–80 characters.</p></div>
+          <div class="field"><h3>Mobile number</h3><p>Required; must pass mobile-number validation.</p></div>
+          <div class="field"><h3>Email</h3><p>Required; enter a valid email address.</p></div>
+          <div class="field"><h3>Password</h3><p>Required; 8–128 characters, with at least one letter and one number.</p></div>
+          <div class="field"><h3>Vehicle</h3><p>Required; enter the vehicle type and details. Example: Motorcycle UP34 AB 1234.</p></div>
+        </div>
+        <div class="callout"><p><b>After Apply:</b> The app creates a rider profile and login, marked <b>Pending</b> and <b>Offline</b>. Duplicate mobile numbers or emails are rejected. The registration endpoint is limited to three attempts per hour.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="verification">
+      <div class="section-heading">
+        <span class="section-number">2</span>
+        <div><h2>Wait for verification, then sign in</h2><p>A platform administrator reviews new rider applications.</p></div>
+      </div>
+      <div class="card">
+        <p>In the admin area, reviewers open <b>Verification queue → Riders</b> and can verify an applicant or reject a pending application with a reason. Decisions are audit logged.</p>
+        <ul class="clean">
+          <li>Sign in at <a href="http://localhost:3000/login">/login</a> using the email or mobile number and password entered on the application.</li>
+          <li>Unverified riders see an account notice and cannot go online or receive available offers.</li>
+          <li>After approval, sign in and switch availability to <b>Online</b> to see eligible deliveries.</li>
+        </ul>
+        <div class="callout info"><p><b>Development demo:</b> In non-production builds, expand “Demo accounts (development only),” choose <b>Rider</b>, and use the demo password shown on that page. The seeded demo rider is already verified; a new application remains pending until reviewed.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="app">
+      <div class="section-heading">
+        <span class="section-number">3</span>
+        <div><h2>Explore the rider app</h2><p>The signed-in rider experience has three main sections.</p></div>
+      </div>
+      <div class="tabs">
+        <article class="tab"><span class="tag">/delivery</span><h3>Deliveries</h3><p>Online/offline switch, today’s earnings and count, active jobs, and available offers.</p></article>
+        <article class="tab"><span class="tag">/delivery/history</span><h3>History</h3><p>Completed delivery reference, area, completion time, payout, and cash collected.</p></article>
+        <article class="tab"><span class="tag">/delivery/earnings</span><h3>Earnings</h3><p>Daily, seven-day, and all-time summaries, a seven-day chart, and COD cash-in-hand reminder.</p></article>
+      </div>
+      <div class="callout info"><p>The rider app can be installed as a separate web app on supported devices. Installing it does not enable offline delivery actions; delivery data and actions require an internet connection.</p></div>
+    </section>
+
+    <section class="section" id="offers">
+      <div class="section-heading">
+        <span class="section-number">4</span>
+        <div><h2>Review and accept an offer</h2><p>Only verified riders who are online can see unassigned, ready-for-pickup jobs.</p></div>
+      </div>
+      <div class="card">
+        <p>An offer may show the order code, ready time, parcel count, payout, pharmacy and distance, customer drop area and distance, priority status, and COD collection amount. Offers are ordered by distance when available, then ready time.</p>
+        <div class="callout"><p><b>Before accepting:</b> the exact customer address, name, and contact details are hidden. After you select <b>Accept delivery</b>, the job is assigned if it is still available. If another rider took it first, the app reports that it is no longer available.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="delivery">
+      <div class="section-heading">
+        <span class="section-number">5</span>
+        <div><h2>Complete a delivery</h2><p>Follow the order of steps shown on the active delivery card.</p></div>
+      </div>
+      <div class="steps">
+        <article class="step"><h3>Go to the pharmacy</h3><p>Use the call or directions links to reach the pickup location.</p></article>
+        <article class="step"><h3>Confirm parcel pickup</h3><p>Ask the pharmacy for its 4-digit pickup code. Enter it and select <b>Confirm pickup</b>. Before pickup, you can release a job you cannot complete.</p></article>
+        <article class="step"><h3>Start delivery</h3><p>After pickup, select <b>Start delivery</b>. The customer is notified that the order is on its way and to have their delivery code ready.</p></article>
+        <article class="step"><h3>Navigate to the customer</h3><p>After accepting, the app displays the customer’s name, phone, address, and landmark. Use call or map directions when available.</p></article>
+        <article class="step"><h3>Collect COD cash if shown</h3><p>For cash-on-delivery orders, collect the exact amount displayed in the app.</p></article>
+        <article class="step"><h3>Confirm delivery</h3><p>Ask the customer for the 4-digit delivery code. Enter it and select <b>Complete delivery</b> to finish the job.</p></article>
+      </div>
+      <div class="callout info"><p>On successful completion, the order is marked delivered, the payout and completion are recorded, and the customer is notified. For COD, payment is marked paid as part of delivery completion.</p></div>
+    </section>
+
+    <section class="section" id="earnings">
+      <div class="section-heading">
+        <span class="section-number">6</span>
+        <div><h2>Review your history and earnings</h2><p>Use the bottom navigation to check completed work.</p></div>
+      </div>
+      <div class="grid">
+        <article class="card"><h3>Delivery history</h3><p>Shows up to 100 completed deliveries with order code, area and pincode, delivery date and time, payout, and cash collected where applicable.</p></article>
+        <article class="card"><h3>Earnings</h3><p>Shows today’s amount and delivery count, last-seven-days earnings, all-time earnings, a daily chart, and today’s COD cash-in-hand reminder when applicable.</p></article>
+      </div>
+      <div class="callout"><p><b>Payouts:</b> the platform team settles payouts. The app shows earning summaries but does not offer an in-app withdrawal or payout request flow.</p></div>
+    </section>
+
+    <section class="section" id="privacy">
+      <div class="section-heading">
+        <span class="section-number">7</span>
+        <div><h2>Privacy and important boundaries</h2><p>Delivery tools are intentionally limited to information needed for handoff.</p></div>
+      </div>
+      <div class="card">
+        <ul class="clean">
+          <li>Medicine names, prescription contents, and medical details are not shown to riders. Keep parcels sealed and handle them carefully.</li>
+          <li>Customer identity and exact contact/address details are revealed only after a job is accepted.</li>
+          <li>A rider can update only jobs assigned to that rider.</li>
+          <li>A rider can release an assigned job only before pickup; the rider flow does not offer job release after pickup.</li>
+          <li>COD cash is recorded when the delivery is completed; the app does not transfer or reconcile physical cash.</li>
+          <li>Pickup and delivery codes are four digits. Order-action requests are limited to eight per rider/order in a ten-minute window.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="scope">
+      <div class="section-heading">
+        <span class="section-number">i</span>
+        <div><h2>What is not part of the current onboarding</h2><p>This guide reflects the features implemented in the app today.</p></div>
+      </div>
+      <div class="card">
+        <ul class="not-built">
+          <li>Identity document or driving-licence upload.</li>
+          <li>Profile photo or bank/payment details.</li>
+          <li>Preferred rider service-area form.</li>
+          <li>Automated identity or licence checks.</li>
+          <li>Rider-side application status tracking.</li>
+          <li>In-app payout withdrawal/request flow.</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      <p><b>DawaDost Rider</b> · Onboarding and feature guide</p>
+      <p>Implementation references: <a href="../src/app/(auth)/partner/rider/page.tsx">rider application</a> · <a href="../src/app/delivery/page.tsx">delivery workflow</a> · <a href="../src/server/services/delivery.ts">delivery service</a> · <a href="../src/app/delivery/earnings/page.tsx">earnings</a></p>
+    </footer>
+  </main>
+</body>
+</html>

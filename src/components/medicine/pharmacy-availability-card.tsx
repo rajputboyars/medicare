@@ -4,7 +4,7 @@ import { Check, Clock, History, MapPin, PackageCheck, PackageMinus, Plus, Zap } 
 import { Badge, Button, Card, StatusBadge, Verified } from "@/components/ui";
 import { fmtAgo } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
-import type { PharmacyOffer } from "@/server/services/finder";
+import type { PharmacyOffer } from "@/server/features/medicines/finder.service";
 
 /**
  * One pharmacy's offer for one medicine: who, how much, how far, how fast, how many are left, and how fresh the stock info is.

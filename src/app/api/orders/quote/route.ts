@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { handle, parseBody, requireUser } from "@/server/http";
-import { quoteOrder } from "@/server/services/orders";
+import { quoteOrder } from "@/server/features/orders/orders.service";
 
 const schema = z.object({
   pharmacyId: z.string().min(1),

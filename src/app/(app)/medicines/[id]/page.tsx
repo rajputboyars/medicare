@@ -1,11 +1,15 @@
 "use client";
+import Link from "next/link";
 import { use, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, MapPin, Star, Zap } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import { api } from "@/lib/api";
 import { useCart, useLocation } from "@/lib/store";
 import { inr } from "@/lib/pricing";
-import { Badge, Button, Card, EmptyState, LinkButton, Notice, PageTitle, QueryBoundary, SkeletonList, Verified } from "@/components/ui";
+import { PharmacyAvailabilityCard } from "@/components/medicine/pharmacy-availability-card";
+import { SortChips, type Strategy } from "@/components/medicine/sort-chips";
+import { PrescriptionBadge } from "@/components/customer/prescription-badge";
+import { Badge, Card, ConfirmationDialog, EmptyState, LinkButton, Notice, PageTitle, QueryBoundary, SkeletonList } from "@/components/ui";
 import type { Medicine } from "@/lib/types";
 import type { PharmacyOffer } from "@/server/services/finder";
 
@@ -16,62 +20,60 @@ export default function MedicineDetail({ params }: { params: Promise<{ id: strin
   const pincode = useLocation((s) => s.pincode);
   const q = useQuery({ queryKey: ["availability", id, pincode], queryFn: () => api<Data>(`/api/medicines/${id}/availability?pincode=${pincode}`) });
   const cart = useCart();
-  const [msg, setMsg] = useState<string>();
+  const [strategy, setStrategy] = useState<Strategy>("fastest");
+  const [added, setAdded] = useState<string>();
+  const [conflict, setConflict] = useState<{ offer: PharmacyOffer; medicine: Medicine }>();
+
+  function add(m: Medicine, o: PharmacyOffer) {
+    const ok = cart.add({ id: o.pharmacyId, name: o.pharmacyName }, { medicineId: m.id, name: m.name, strength: m.strength, price: o.sellingPrice, mrp: m.mrp, prescriptionRequired: m.prescriptionRequired });
+    if (ok) setAdded(`Added from ${o.pharmacyName}`); else setConflict({ offer: o, medicine: m });
+  }
 
   return (
-    <QueryBoundary query={q} skeleton={<SkeletonList rows={3} height="h-32" />}>
+    <QueryBoundary query={q} skeleton={<SkeletonList rows={3} lines={4} />}>
       {({ medicine: m, offers }) => {
+        const sorted = [...offers].sort((a, b) => strategy === "cheapest" ? a.sellingPrice - b.sellingPrice : strategy === "nearest" ? a.distanceKm - b.distanceKm : a.etaMinutes - b.etaMinutes);
         const closest = [...offers].sort((a, b) => a.distanceKm - b.distanceKm)[0];
         const fastest = [...offers].sort((a, b) => a.etaMinutes - b.etaMinutes)[0];
         const lowest = [...offers].sort((a, b) => a.sellingPrice - b.sellingPrice)[0];
-        const add = (o: PharmacyOffer) => {
-          const ok = cart.add({ id: o.pharmacyId, name: o.pharmacyName }, { medicineId: m.id, name: m.name, strength: m.strength, price: o.sellingPrice, mrp: m.mrp, prescriptionRequired: m.prescriptionRequired });
-          setMsg(ok ? `Added from ${o.pharmacyName}` : `Your cart has items from ${cart.pharmacyName}. Clear your cart to order from ${o.pharmacyName}.`);
-        };
         return (
           <>
-            <PageTitle title={m.name} subtitle={`${m.generic} · ${m.strength} · ${m.form} · ${m.packSize}`} />
-            <div className="mb-4 flex flex-wrap gap-2">
-              {m.prescriptionRequired ? <Badge tone="amber">Prescription required</Badge> : <Badge>No prescription needed</Badge>}
-              {m.restricted && <Badge tone="red">Restricted medicine</Badge>}
-              <Badge tone="blue">Brand: {m.brand}</Badge>
-            </div>
-            {m.prescriptionRequired && <div className="mb-4"><Notice tone="amber" title="Pharmacist will check your prescription">We never substitute prescription medicines on our own. You will confirm the final medicines before payment.</Notice></div>}
-            {msg && <div className="mb-4" role="status"><Notice tone="blue">{msg} {cart.lines.length > 0 && <a className="font-bold underline" href="/checkout">Go to cart</a>}</Notice></div>}
+            <PageTitle back={{ href: "/medicines", label: "All medicines" }} title={m.name} subtitle={`${m.generic} · ${m.strength} · ${m.form} · ${m.packSize}`} />
+            <div className="mb-4 flex flex-wrap gap-1.5"><PrescriptionBadge required={m.prescriptionRequired} restricted={m.restricted} /><Badge tone="blue">Brand: {m.brand}</Badge></div>
+            {m.prescriptionRequired && <div className="mb-4"><Notice tone="amber" title="A pharmacist will verify your prescription">Your order is confirmed only after the pharmacist approves it. We never swap medicines on our own.</Notice></div>}
+
+            {added && (
+              <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-ok-line bg-ok-50 p-3">
+                <p className="font-semibold">{added}</p>
+                <LinkButton href="/checkout" size="sm"><ShoppingBag className="size-4" aria-hidden /> View cart ({cart.lines.reduce((n, l) => n + l.quantity, 0)})</LinkButton>
+              </div>
+            )}
 
             {offers.length === 0 ? (
-              <EmptyState title="Not available at nearby pharmacies" body="We can ask verified pharmacies around you to find it and tell you when it is available." action={<LinkButton href={`/find-medicine?q=${encodeURIComponent(m.name)}`}>Find this medicine for me</LinkButton>} />
+              <EmptyState title="Not available at nearby pharmacies" body="We can ask verified pharmacies around you to find it, and tell you when it is available." action={<LinkButton href={`/find-medicine?q=${encodeURIComponent(m.name)}`}>Find My Medicine</LinkButton>} />
             ) : (
               <>
-                <Card className="mb-4 bg-brand-50"><p className="text-lg font-bold">Available at {offers.length} nearby {offers.length === 1 ? "pharmacy" : "pharmacies"}</p>
-                  <p className="text-sm text-muted">Closest {closest.distanceKm} km · Fastest {fastest.etaMinutes} min · Lowest {inr(lowest.sellingPrice)}</p></Card>
-                <ul className="space-y-3">
-                  {offers.map((o) => (
-                    <Card as="li" key={o.pharmacyId} className="space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-lg font-bold">{o.pharmacyName}</h3>
-                          <div className="mt-1 flex flex-wrap gap-2"><Verified label="Verified Pharmacy" />
-                            {o.pharmacyId === closest.pharmacyId && <Badge tone="blue">Closest</Badge>}
-                            {o.pharmacyId === fastest.pharmacyId && <Badge tone="blue">Fastest</Badge>}
-                            {o.pharmacyId === lowest.pharmacyId && <Badge tone="blue">Lowest price</Badge>}
-                            {!o.open && <Badge tone="amber">Closed now · confirms when open</Badge>}</div>
-                        </div>
-                        <p className="text-xl font-extrabold">{inr(o.sellingPrice)} <span className="text-sm font-normal text-muted line-through">{inr(o.mrp)}</span></p>
-                      </div>
-                      <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                        <li className="flex items-center gap-1.5"><MapPin className="size-4 text-brand-600" aria-hidden /> {o.distanceKm} km</li>
-                        <li className="flex items-center gap-1.5"><Clock className="size-4 text-brand-600" aria-hidden /> {o.etaMinutes}–{Math.round(o.etaMinutes * 1.4)} min</li>
-                        {o.priorityAvailable && <li className="flex items-center gap-1.5"><Zap className="size-4 text-brand-600" aria-hidden /> Priority delivery</li>}
-                        {o.rating > 0 && <li className="flex items-center gap-1.5"><Star className="size-4 text-amber-500" aria-hidden /> {o.rating}</li>}
-                        <li className="text-muted">{o.quantity < 10 ? `Only ${o.quantity} left` : "In stock"}</li>
-                      </ul>
-                      <Button className="w-full sm:w-auto" onClick={() => add(o)}>Add from this pharmacy</Button>
-                    </Card>
+                <Card className="mb-4 bg-brand-50">
+                  <p className="t-section">Available at {offers.length} nearby {offers.length === 1 ? "pharmacy" : "pharmacies"}</p>
+                  <p className="t-support">Closest {closest.distanceKm} km · Fastest about {fastest.etaMinutes} min · Lowest {inr(lowest.sellingPrice)}</p>
+                </Card>
+                <div className="mb-3"><SortChips value={strategy} onChange={setStrategy} label="Sort pharmacies by" /></div>
+                <ul className="grid gap-3 md:grid-cols-2" aria-label="Pharmacies">
+                  {sorted.map((o) => (
+                    <PharmacyAvailabilityCard key={o.pharmacyId} offer={o}
+                      highlights={[...(o.pharmacyId === closest.pharmacyId ? (["Closest"] as const) : []), ...(o.pharmacyId === fastest.pharmacyId ? (["Fastest"] as const) : []), ...(o.pharmacyId === lowest.pharmacyId ? (["Lowest price"] as const) : [])]}
+                      inCart={cart.pharmacyId === o.pharmacyId ? cart.lines.find((l) => l.medicineId === m.id)?.quantity : undefined}
+                      onAdd={() => add(m, o)} />
                   ))}
                 </ul>
+                <p className="t-caption mt-4">Prices and stock are set by each pharmacy. <Link href="/find-medicine" className="underline">Need a different strength? Ask nearby pharmacies.</Link></p>
               </>
             )}
+
+            <ConfirmationDialog open={!!conflict} onClose={() => setConflict(undefined)} title="Start a new cart?"
+              description={`Your cart has medicines from ${cart.pharmacyName}. One order can come from one pharmacy, so we would clear it to order from ${conflict?.offer.pharmacyName}.`}
+              confirmLabel="Start a new cart" cancelLabel="Keep my cart"
+              onConfirm={() => { if (conflict) { cart.clear(); add(conflict.medicine, conflict.offer); } setConflict(undefined); }} />
           </>
         );
       }}

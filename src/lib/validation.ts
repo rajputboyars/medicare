@@ -79,9 +79,22 @@ export const prescriptionMetaSchema = z.object({
 });
 
 export const medicineRequestSchema = z.object({
-  medicineQuery: z.string().trim().min(2).max(100),
+  medicineQuery: z.string().trim().min(2, "Enter the medicine name").max(100),
+  strength: z.string().trim().max(40).optional().or(z.literal("")),
+  quantity: z.coerce.number().int().min(1, "At least 1").max(99).default(1),
   mobile: mobileSchema,
   pincode: pincodeSchema,
+  prescriptionId: z.string().optional().or(z.literal("")),
+});
+
+/** A pharmacy's reply to "Find My Medicine". When it has the medicine it must say price, quantity and prep time. */
+export const requestReplySchema = z.object({
+  response: z.enum(["AVAILABLE", "ALTERNATIVE", "OUT_OF_STOCK"]),
+  alternative: z.string().trim().max(100).optional(),
+  restockEta: z.string().trim().max(60).optional(),
+  price: z.coerce.number().positive("Enter the price").max(100000).optional(),
+  availableQty: z.coerce.number().int().min(1, "Enter how many you have").max(10000).optional(),
+  prepMinutes: z.coerce.number().int().min(1, "Enter minutes").max(1440).optional(),
 });
 
 export const launchSignupSchema = z.object({ mobile: mobileSchema, pincode: pincodeSchema });

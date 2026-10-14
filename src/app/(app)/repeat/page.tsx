@@ -7,7 +7,7 @@ import { api, del, post } from "@/lib/api";
 import { fmtDate, useMe } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
 import { STATUS_LABEL, isFinal } from "@/lib/order-machine";
-import { Badge, Button, Card, EmptyState, ErrorState, Input, LinkButton, Notice, PageTitle, QueryBoundary, Select, SkeletonList } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Input, LinkButton, Notice, PageTitle, QueryBoundary, Select, SkeletonList, StatusBadge } from "@/components/ui";
 import type { Address, FamilyMember, Order, Pharmacy, SavedMedicine } from "@/lib/types";
 
 type R = SavedMedicine & { daysLeft: number; forName?: string; meds: { medicineId: string; name: string; quantity: number; prescriptionRequired: boolean }[] };
@@ -63,7 +63,7 @@ export default function Repeat() {
             <ul className="space-y-3">
               {list.filter((o) => isFinal(o.status)).slice(0, 6).map((o) => (
                 <Card as="li" key={o.id} className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{o.code} · {inr(o.total)}</p><Badge tone={o.status === "DELIVERED" ? "green" : "red"}>{STATUS_LABEL[o.status]}</Badge></div>
+                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{o.code} · {inr(o.total)}</p><StatusBadge tone={o.status === "DELIVERED" ? "success" : "danger"}>{STATUS_LABEL[o.status]}</StatusBadge></div>
                   <p className="text-sm text-muted">{o.items.map((i) => `${i.name} ×${i.quantity}`).join(", ")}</p>
                   <Button loading={repeat.isPending && repeat.variables === o.id} onClick={() => repeat.mutate(o.id)}><RepeatIcon className="size-5" aria-hidden /> Reorder in one tap</Button>
                 </Card>
@@ -110,7 +110,7 @@ export default function Repeat() {
                 <Card as="li" key={r.id} className="space-y-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div><h3 className="text-lg font-bold">{r.label}</h3><p className="text-sm text-muted">{r.forName ? `For ${r.forName} · ` : ""}every {r.everyDays} days · next refill {fmtDate(r.nextRefillAt)}</p></div>
-                    <Badge tone={r.daysLeft <= 0 ? "red" : r.daysLeft <= 7 ? "amber" : "green"}>{r.daysLeft <= 0 ? "Refill due now" : `Due in ${r.daysLeft} days`}</Badge>
+                    <StatusBadge tone={r.daysLeft <= 0 ? "danger" : r.daysLeft <= 7 ? "warning" : "success"}>{r.daysLeft <= 0 ? "Refill due now" : `Due in ${r.daysLeft} days`}</StatusBadge>
                   </div>
                   <ul className="text-sm">{r.meds.map((m) => <li key={m.medicineId}>• {m.name} ×{m.quantity} {m.prescriptionRequired && <Badge tone="amber">Rx</Badge>}</li>)}</ul>
                   <div className="flex flex-wrap items-center gap-2">

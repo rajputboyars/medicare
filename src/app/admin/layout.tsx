@@ -1,24 +1,32 @@
 "use client";
-import { BadgeCheck, Bike, ClipboardList, Coins, CreditCard, LayoutDashboard, LifeBuoy, LineChart, MapPinned, ScrollText, Search, Settings, Store, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Bike, ClipboardList, Coins, CreditCard, LayoutDashboard, LifeBuoy, LineChart, MapPinned, Search, Settings, Store, Users } from "lucide-react";
+import { api } from "@/lib/api";
 import { PortalShell } from "@/components/layout/portal-shell";
+import type { NavItem } from "@/components/layout/nav";
 
-const NAV = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/admin/customers", label: "Customers", icon: Users },
-  { href: "/admin/pharmacies", label: "Pharmacies", icon: Store },
-  { href: "/admin/verification", label: "Pharmacy Verification", icon: BadgeCheck },
-  { href: "/admin/orders", label: "Orders", icon: ClipboardList },
-  { href: "/admin/requests", label: "Medicine Requests", icon: Search },
-  { href: "/admin/riders", label: "Riders", icon: Bike },
-  { href: "/admin/service-areas", label: "Service Areas", icon: MapPinned },
-  { href: "/admin/payments", label: "Payments", icon: CreditCard },
-  { href: "/admin/settlements", label: "Settlements", icon: Coins },
-  { href: "/admin/complaints", label: "Complaints", icon: LifeBuoy },
-  { href: "/admin/reports", label: "Reports", icon: LineChart },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
-  { href: "/admin/audit", label: "Audit log", icon: ScrollText },
-];
+export interface AttentionItem { id: string; severity: "info" | "warning" | "critical"; title: string; description: string; href: string; actionLabel: string }
+export interface AdminStats {
+  ordersToday: number; gmv: number; customers: number; activePharmacies: number; ridersOnline: number; ridersVerified: number; liveOrders: number; openRequests: number; openTickets: number;
+  pendingApprovals: number; pendingPharmacyApprovals: number; pendingRiderApprovals: number; pendingSettlements: number; deliveries: number; cancelledOrders: number; attention: AttentionItem[];
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return <PortalShell title="Admin" nav={NAV}>{children}</PortalShell>;
+  // Same key as the dashboard so sidebar counts cost nothing extra.
+  const s = useQuery({ queryKey: ["admin-stats"], queryFn: () => api<AdminStats>("/api/admin/stats"), refetchInterval: 30_000 }).data;
+  const nav: NavItem[] = [
+    { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+    { href: "/admin/customers", label: "Users", icon: Users },
+    { href: "/admin/pharmacies", label: "Pharmacies", icon: Store, badge: s?.pendingPharmacyApprovals, also: ["/admin/verification"] },
+    { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+    { href: "/admin/requests", label: "Medicine Requests", icon: Search, badge: s?.openRequests },
+    { href: "/admin/riders", label: "Delivery Partners", icon: Bike, badge: s?.pendingRiderApprovals },
+    { href: "/admin/service-areas", label: "Service Areas", icon: MapPinned },
+    { href: "/admin/payments", label: "Payments", icon: CreditCard },
+    { href: "/admin/settlements", label: "Settlements", icon: Coins },
+    { href: "/admin/complaints", label: "Complaints", icon: LifeBuoy, badge: s?.openTickets },
+    { href: "/admin/reports", label: "Reports", icon: LineChart },
+    { href: "/admin/settings", label: "Settings", icon: Settings, also: ["/admin/audit"] },
+  ];
+  return <PortalShell title="Admin" nav={nav}>{children}</PortalShell>;
 }

@@ -130,6 +130,10 @@ async function loadAll(): Promise<Db> {
     raw.set(s.name, (await q.lean()).map((d: Record<string, unknown>) => fromLean(d)));
   }
   for (const s of SINKS) s.hydrate(raw.get(s.name)!, target, raw);
+  // Rows written by an older version of the app: fill fields added since.
+  const now = new Date().toISOString();
+  for (const i of target.inventory) i.updatedAt ??= now;
+  for (const r of target.medicineRequests) r.quantity ??= 1;
   return target;
 }
 

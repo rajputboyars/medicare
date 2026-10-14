@@ -125,6 +125,8 @@ export interface PharmacyInventory {
   sellingPrice: number;
   quantity: number;
   lowStockThreshold: number;
+  /** When this stock line was last changed: shown to customers as "Updated 2h ago". */
+  updatedAt: string;
 }
 
 export type PrescriptionStatus = "RECEIVED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "NEEDS_CLARIFICATION";
@@ -143,7 +145,7 @@ export interface Prescription {
   reviewedBy?: string;
   reviewNote?: string;
   pharmacyId?: string;
-  source: "UPLOAD" | "QUICK_ORDER";
+  source: "UPLOAD" | "QUICK_ORDER" | "REQUEST";
   callbackMobile?: string;
   createdAt: string;
 }
@@ -280,8 +282,13 @@ export interface MedicineRequest {
   id: string;
   userId: string;
   medicineQuery: string;
+  strength?: string;
+  quantity: number;
   mobile: string;
   pincode: string;
+  /** Optional private files the customer chose to share with nearby pharmacies */
+  photoRxId?: string;
+  prescriptionId?: string;
   status: "OPEN" | "FOUND" | "CLOSED";
   createdAt: string;
 }
@@ -293,6 +300,10 @@ export interface MedicineRequestResponse {
   response: "AVAILABLE" | "ALTERNATIVE" | "OUT_OF_STOCK";
   alternative?: string;
   restockEta?: string;
+  /** Filled when the pharmacy has it: price per unit, units available and how long to prepare. */
+  price?: number;
+  availableQty?: number;
+  prepMinutes?: number;
   at: string;
 }
 

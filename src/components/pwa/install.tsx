@@ -40,7 +40,7 @@ export function InstallCard({ appName = "DawaDost", storageKey = "mc-install-dis
   if (installed || dismissed || (!canPrompt && !showIosHint)) return null;
   const close = () => { setDismissed(true); try { localStorage.setItem(storageKey, "1"); } catch { /* private mode */ } };
   return (
-    <div className="flex items-start gap-3 rounded-[1.25rem] border-2 border-brand-200 bg-brand-50 p-4">
+    <div className="flex items-start gap-3 rounded-card border-2 border-brand-200 bg-brand-50 p-4">
       <Download className="mt-0.5 size-6 shrink-0 text-brand-700" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-bold">Install {appName}</p>

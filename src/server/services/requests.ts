@@ -3,21 +3,27 @@ import { badRequest, forbidden, notFound } from "../errors";
 import { stockFor as stockPrice } from "../inventory";
 import { notify } from "../notifications";
 import { db, uid } from "../store";
+import { distanceKm } from "@/lib/geo";
 import { offersFor, pincodeCenter } from "./finder";
 import { createOrder } from "./orders";
 
 // ───────────── "Find This Medicine For Me" ─────────────
 
 /** Broadcasts to verified pharmacies that serve the pincode. They answer with a MedicineRequestResponse. */
-export function createMedicineRequest(input: { medicineQuery: string; mobile: string; pincode: string }, userId?: string) {
+export function createMedicineRequest(input: { medicineQuery: string; strength?: string; quantity?: number; mobile: string; pincode: string; photoRxId?: string; prescriptionId?: string }, userId?: string) {
   const d = db();
   const targets = d.pharmacies.filter((p) => p.verification === "VERIFIED" && p.acceptingOrders && p.servicePincodes.includes(input.pincode));
   if (!targets.length) throw badRequest("We're coming to your area. No partner pharmacy covers this pincode yet.");
   const dup = d.medicineRequests.find((r) => r.status === "OPEN" && r.mobile === input.mobile && r.medicineQuery.toLowerCase() === input.medicineQuery.toLowerCase());
-  if (dup) return { ...dup, pharmaciesNotified: targets.length };
-  const r = { id: uid("req"), userId: userId ?? `guest:${input.mobile}`, medicineQuery: input.medicineQuery, mobile: input.mobile, pincode: input.pincode, status: "OPEN" as const, createdAt: new Date().toISOString() };
+  const asked = targets.map((p) => ({ id: p.id, name: p.name }));
+  if (dup) return { ...dup, pharmaciesNotified: targets.length, asked, responses: requestResponses(dup.id) };
+  if (input.prescriptionId && !d.prescriptions.some((p) => p.id === input.prescriptionId && p.userId === userId)) throw badRequest("Prescription not found");
+  const r = {
+    id: uid("req"), userId: userId ?? `guest:${input.mobile}`, medicineQuery: input.medicineQuery, strength: input.strength || undefined, quantity: input.quantity ?? 1,
+    mobile: input.mobile, pincode: input.pincode, photoRxId: input.photoRxId, prescriptionId: input.prescriptionId, status: "OPEN" as const, createdAt: new Date().toISOString(),
+  };
   d.medicineRequests.unshift(r);
-  return { ...r, pharmaciesNotified: targets.length };
+  return { ...r, pharmaciesNotified: targets.length, asked, responses: [] as ReturnType<typeof requestResponses> };
 }
 
 export function requestResponses(requestId: string) {
@@ -27,20 +33,30 @@ export function requestResponses(requestId: string) {
     .map((x) => ({ ...x, pharmacyName: d.pharmacies.find((p) => p.id === x.pharmacyId)?.name }));
 }
 
+/** The pharmacies a request is sent to: verified, taking orders and delivering to that pincode. */
+export function askedPharmacies(pincode: string) {
+  return db().pharmacies.filter((p) => p.verification === "VERIFIED" && p.acceptingOrders && p.servicePincodes.includes(pincode)).map((p) => ({ id: p.id, name: p.name }));
+}
+
 export function myRequests(user: SessionUser) {
   const d = db();
   const mobile = d.users.find((u) => u.id === user.id)?.mobile;
-  return d.medicineRequests.filter((r) => r.userId === user.id || r.mobile === mobile).map((r) => ({ ...r, responses: requestResponses(r.id) }));
+  return d.medicineRequests
+    .filter((r) => r.userId === user.id || r.mobile === mobile)
+    .map((r) => ({ ...r, responses: requestResponses(r.id), asked: askedPharmacies(r.pincode) }));
 }
 
 /** Pharmacy replies to a request. Replying "AVAILABLE" marks it found and notifies the customer. */
-export function respondToRequest(user: SessionUser, requestId: string, response: "AVAILABLE" | "ALTERNATIVE" | "OUT_OF_STOCK", extra: { alternative?: string; restockEta?: string }) {
+export interface ResponseExtra { alternative?: string; restockEta?: string; price?: number; availableQty?: number; prepMinutes?: number }
+
+export function respondToRequest(user: SessionUser, requestId: string, response: "AVAILABLE" | "ALTERNATIVE" | "OUT_OF_STOCK", extra: ResponseExtra) {
   const d = db();
   const p = d.pharmacies.find((x) => x.id === user.partnerId);
   if (!p) throw forbidden();
   const r = d.medicineRequests.find((x) => x.id === requestId);
   if (!r) throw notFound();
   if (!p.servicePincodes.includes(r.pincode)) throw forbidden();
+  if (response === "AVAILABLE" && (!extra.price || !extra.availableQty || !extra.prepMinutes)) throw badRequest("Add the price, how many you have and how long it takes to prepare");
   d.medicineRequestResponses = d.medicineRequestResponses.filter((x) => !(x.requestId === r.id && x.pharmacyId === p.id));
   d.medicineRequestResponses.push({ id: uid("rr"), requestId: r.id, pharmacyId: p.id, response, ...extra, at: new Date().toISOString() });
   if (response === "AVAILABLE" && r.status === "OPEN") {
@@ -56,7 +72,21 @@ export function openRequestsForPharmacy(user: SessionUser) {
   if (!p) throw forbidden();
   return d.medicineRequests
     .filter((r) => r.status !== "CLOSED" && p.servicePincodes.includes(r.pincode))
-    .map((r) => ({ id: r.id, medicineQuery: r.medicineQuery, pincode: r.pincode, createdAt: r.createdAt, status: r.status, myResponse: d.medicineRequestResponses.find((x) => x.requestId === r.id && x.pharmacyId === p.id) }));
+    .map((r) => {
+      const centre = pincodeCenter(r.pincode);
+      const sharedFile = r.prescriptionId ?? r.photoRxId;
+      return {
+        id: r.id, medicineQuery: r.medicineQuery, strength: r.strength, quantity: r.quantity, pincode: r.pincode, createdAt: r.createdAt, status: r.status,
+        ageMinutes: Math.max(0, Math.round((Date.now() - Date.parse(r.createdAt)) / 60_000)),
+        distanceKm: centre ? distanceKm(centre, p.location) : undefined,
+        area: `${d.pharmacies.find((x) => x.servicePincodes.includes(r.pincode))?.district ?? "Your area"}, ${r.pincode}`,
+        // Pharmacies can open what the customer chose to share (photo or prescription), through the signed-URL route
+        sharedFileId: sharedFile, hasPrescription: !!r.prescriptionId, hasPhoto: !!r.photoRxId,
+        myResponse: d.medicineRequestResponses.find((x) => x.requestId === r.id && x.pharmacyId === p.id),
+        repliesFromOthers: d.medicineRequestResponses.filter((x) => x.requestId === r.id && x.pharmacyId !== p.id).length,
+      };
+    })
+    .sort((a, b) => Number(!!a.myResponse) - Number(!!b.myResponse) || a.createdAt.localeCompare(b.createdAt));
 }
 
 // ───────────── Saved medicines (refill-ready) ─────────────

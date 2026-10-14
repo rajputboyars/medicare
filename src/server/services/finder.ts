@@ -17,6 +17,8 @@ export interface PharmacyOffer {
   mrp: number;
   quantity: number;
   rating: number;
+  /** Last time this pharmacy changed its stock for this medicine */
+  updatedAt: string;
 }
 
 export interface MedicineResult {
@@ -58,7 +60,7 @@ export function offersFor(medicineId: string, pincode: string, at?: GeoPoint | n
       return [{
         pharmacyId: p.id, pharmacyName: p.name, verified: true as const, distanceKm: p.km, etaMinutes: eta.minutes,
         priorityAvailable: p.priorityDelivery, open: isOpenNow(p.openTime, p.closeTime, now), closesAt: p.closeTime,
-        sellingPrice: inv.sellingPrice, mrp: inv.mrp, quantity: inv.quantity, rating: p.rating,
+        sellingPrice: inv.sellingPrice, mrp: inv.mrp, quantity: inv.quantity, rating: p.rating, updatedAt: inv.updatedAt,
       }];
     });
 }

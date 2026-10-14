@@ -7,8 +7,8 @@ import { advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, confir
 import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory, earningsSummary, riderStep, riderSummary, setAvailability } from "@/server/services/delivery";
 import { storePrescription } from "@/server/services/prescriptions";
 import { bulkUploadCsv, customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/services/pharmacy";
-import { createMedicineRequest, getCart, myRequests, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/services/requests";
-import { adminList, adminStats, coverageFor, generateSettlements, launchSignup, platformReports, registerPharmacy, registerRider, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/services/admin";
+import { createMedicineRequest, getCart, myRequests, openRequestsForPharmacy, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/services/requests";
+import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, registerPharmacy, registerRider, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/services/admin";
 
 const customer: SessionUser = { id: "u_1", name: "Asha", role: "CUSTOMER" };
 const pharmacist: SessionUser = { id: "u_rx", name: "Kavita", role: "PHARMACIST", partnerId: "ph_1" };
@@ -90,7 +90,7 @@ describe("Find This Medicine For Me", () => {
     expect(req.pharmaciesNotified).toBeGreaterThan(0);
     respondToRequest(pharmacist, req.id, "OUT_OF_STOCK", { restockEta: "2 days" });
     expect(db().medicineRequests[0].status).toBe("OPEN");
-    respondToRequest(pharmacist, req.id, "AVAILABLE", {});
+    respondToRequest(pharmacist, req.id, "AVAILABLE", { price: 90, availableQty: 3, prepMinutes: 10 });
     expect(db().medicineRequests[0].status).toBe("FOUND");
     expect(db().medicineRequestResponses.filter((x) => x.requestId === req.id)).toHaveLength(1); // replaced, not duplicated
     expect(db().notifications.some((n) => n.event === "MEDICINE_FOUND" && n.userId === customer.id)).toBe(true);
@@ -101,7 +101,21 @@ describe("Find This Medicine For Me", () => {
   });
   it("only pharmacies serving the pincode may respond", () => {
     const req = createMedicineRequest({ medicineQuery: "Tonic", mobile: "9876543210", pincode: "261125" }, customer.id);
-    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", {})).toThrow(); // ph_1 does not serve 261125
+    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", { price: 90, availableQty: 3, prepMinutes: 10 })).toThrow(); // ph_1 does not serve 261125
+  });
+  it("saying Available needs price, quantity and prep time", () => {
+    const req = createMedicineRequest({ medicineQuery: "Rare tonic", mobile: "9876543210", pincode: "261001", strength: "200 ml", quantity: 2 }, customer.id);
+    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", {})).toThrow(/price/i);
+    expect(() => respondToRequest(pharmacist, req.id, "AVAILABLE", { price: 90, availableQty: 2 })).toThrow(/prepare/i);
+    expect(() => respondToRequest(pharmacist, req.id, "OUT_OF_STOCK", {})).not.toThrow();
+  });
+  it("lists who was asked and keeps strength and quantity", () => {
+    const req = createMedicineRequest({ medicineQuery: "Rare tonic", mobile: "9876543210", pincode: "261001", strength: "200 ml", quantity: 2 }, customer.id);
+    expect(req.asked.length).toBe(req.pharmaciesNotified);
+    const mine = myRequests(customer).find((r) => r.id === req.id)!;
+    expect(mine.quantity).toBe(2);
+    expect(mine.strength).toBe("200 ml");
+    expect(openRequestsForPharmacy(pharmacist).find((r) => r.id === req.id)).toMatchObject({ quantity: 2, strength: "200 ml", ageMinutes: expect.any(Number) });
   });
 });
 
@@ -486,5 +500,24 @@ describe("admin", () => {
     otc(); // an order placed right now always counts as "today" (seeded orders can fall on yesterday just after midnight)
     expect(adminStats().ordersToday).toBeGreaterThan(0);
     expect(platformReports().days).toHaveLength(7);
+  });
+});
+
+describe("admin attention list", () => {
+  it("flags an order nobody answered, most urgent first", () => {
+    const o = createOrder(customer, { ...base, items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
+    expect(attentionItems().some((a) => a.id === "stuck-pending")).toBe(false); // a fresh order is fine
+    db().orders.find((x) => x.id === o.id)!.createdAt = new Date(Date.now() - 90 * 60_000).toISOString();
+    expect(attentionItems()[0]).toMatchObject({ id: "stuck-pending", severity: "critical" });
+    expect(adminStats().attention.length).toBeGreaterThan(0);
+  });
+});
+
+describe("inventory freshness", () => {
+  it("stamps updatedAt when stock changes", () => {
+    const row = db().inventory.find((i) => i.pharmacyId === "ph_1")!;
+    row.updatedAt = "2020-01-01T00:00:00.000Z";
+    quickStockUpdate(pharmacist, row.id, row.quantity + 1);
+    expect(Date.parse(row.updatedAt)).toBeGreaterThan(Date.parse("2021-01-01"));
   });
 });

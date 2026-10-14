@@ -103,6 +103,7 @@ export const PharmacyInventory = define("PharmacyInventory", {
   pharmacyId: { type: S, required: true }, medicineId: { type: S, required: true },
   batch: { type: S, required: true }, expiry: { type: Date, required: true },
   mrp: Number, sellingPrice: Number, quantity: { type: Number, min: 0 }, lowStockThreshold: { type: Number, default: 10 },
+  updatedAt: { type: Date, default: Date.now },
 }, (s) => {
   s.index({ pharmacyId: 1, medicineId: 1, batch: 1 }, { unique: true });
   s.index({ medicineId: 1, quantity: 1, pharmacyId: 1 }); // "which pharmacies have this medicine?"
@@ -117,12 +118,13 @@ export const Prescription = define("Prescription", {
   fileName: S, mimeType: S, sizeBytes: Number,
   status: { type: S, enum: ["RECEIVED", "UNDER_REVIEW", "APPROVED", "REJECTED", "NEEDS_CLARIFICATION"], default: "RECEIVED" },
   requestedMedicines: [S], reviewedBy: S, reviewNote: S, pharmacyId: S,
-  source: { type: S, enum: ["UPLOAD", "QUICK_ORDER"] }, callbackMobile: S,
+  source: { type: S, enum: ["UPLOAD", "QUICK_ORDER", "REQUEST"] }, callbackMobile: S,
   createdAt: { type: Date, default: Date.now },
 }, (s) => { s.index({ userId: 1, createdAt: -1 }); s.index({ status: 1 }); s.index({ pharmacyId: 1, status: 1 }); });
 
 export const MedicineRequest = define("MedicineRequest", {
-  userId: { type: S, required: true }, medicineQuery: S, mobile: S, pincode: { type: S, required: true },
+  userId: { type: S, required: true }, medicineQuery: S, strength: S, quantity: { type: Number, min: 1, default: 1 }, mobile: S, pincode: { type: S, required: true },
+  photoRxId: S, prescriptionId: S,
   status: { type: S, enum: ["OPEN", "FOUND", "CLOSED"], default: "OPEN" },
   createdAt: { type: Date, default: Date.now },
 }, (s) => { s.index({ pincode: 1, status: 1, createdAt: -1 }); s.index({ userId: 1 }); });
@@ -130,6 +132,7 @@ export const MedicineRequest = define("MedicineRequest", {
 export const MedicineRequestResponse = define("MedicineRequestResponse", {
   requestId: { type: S, required: true }, pharmacyId: { type: S, required: true },
   response: { type: S, enum: ["AVAILABLE", "ALTERNATIVE", "OUT_OF_STOCK"] }, alternative: S, restockEta: S,
+  price: Number, availableQty: Number, prepMinutes: Number,
   at: { type: Date, default: Date.now },
 }, (s) => { s.index({ requestId: 1, pharmacyId: 1 }, { unique: true }); s.index({ pharmacyId: 1 }); });
 

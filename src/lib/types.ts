@@ -10,17 +10,43 @@ export interface GeoPoint {
   lng: number;
 }
 
+export type Language = "en" | "hi";
+
+/** Accessibility and comfort settings. Stored on the account so they follow the person to any device. */
+export interface UserPreferences {
+  largeText: boolean;
+  /** Bigger buttons and more space between them */
+  largeControls: boolean;
+  /** Fewer sections and decorations: only the main actions */
+  simplified: boolean;
+  highContrast: boolean;
+}
+export const DEFAULT_PREFERENCES: UserPreferences = { largeText: false, largeControls: false, simplified: false, highContrast: false };
+
 export interface User {
   id: string;
   name: string;
   email?: string;
   mobile: string;
-  passwordHash: string;
+  /** Customers and partners sign in with a one-time code and have no password. Staff and admins do. */
+  passwordHash?: string;
   role: Role;
-  /** Pharmacy (staff) or delivery-partner profile the account belongs to */
+  /** Pharmacy (staff) or delivery-partner profile the account belongs to. Empty until a partner application is approved. */
   partnerId?: string;
-  language: "en" | "hi";
+  language: Language;
+  /** Where the customer is (from onboarding). Used for the first search, never for tracking. */
+  pincode?: string;
+  district?: string;
+  preferences: UserPreferences;
   consent: { healthData: boolean; marketing: boolean; acceptedAt?: string };
+  /** ACTIVE accounts can sign in. SUSPENDED accounts are refused and their sessions are revoked. */
+  status: "ACTIVE" | "SUSPENDED";
+  mobileVerifiedAt?: string;
+  /** Password-login attempt controls */
+  failedLogins?: number;
+  lockedUntil?: string;
+  /** Multi-factor sign-in. Required for SUPER_ADMIN in production. */
+  mfa?: { enabled: boolean; method: "SMS_OTP" | "TOTP" };
   createdAt: string;
 }
 
@@ -29,6 +55,160 @@ export interface SessionUser {
   name: string;
   role: Role;
   partnerId?: string;
+  /** The server-side session this request belongs to (set for requests that came through HTTP). */
+  sessionId?: string;
+  /** True for a short time after an admin re-confirmed their identity (see requireElevated). */
+  elevated?: boolean;
+}
+
+/** One signed-in device. The cookie carries only the id; this record decides whether it is still valid. */
+export interface Session {
+  id: string;
+  userId: string;
+  kind: "STANDARD" | "ADMIN";
+  createdAt: string;
+  lastSeenAt: string;
+  /** Hard stop: the session can never be refreshed past this */
+  absoluteExpiresAt: string;
+  /** Moves forward on refresh/activity; the session also dies when it passes */
+  expiresAt: string;
+  revokedAt?: string;
+  revokedReason?: string;
+  userAgent?: string;
+  ip?: string;
+  /** Admin MFA: false until the second factor is checked */
+  mfaVerified: boolean;
+  /** Sensitive admin actions need this to be in the future */
+  elevatedUntil?: string;
+}
+
+export type OtpPurpose = "AUTH" | "ADMIN_MFA" | "ASSISTED_CONSENT";
+/** A one-time code that was sent. Only a keyed hash is kept. */
+export interface OtpChallenge {
+  id: string;
+  mobile: string;
+  purpose: OtpPurpose;
+  codeHash: string;
+  attempts: number;
+  maxAttempts: number;
+  expiresAt: string;
+  consumedAt?: string;
+  /** Set once the code was entered wrongly too many times or a newer code replaced it */
+  invalidatedAt?: string;
+  /** For ADMIN_MFA / ASSISTED_CONSENT: who the code is bound to */
+  subjectId?: string;
+  ip?: string;
+  createdAt: string;
+}
+
+/** Someone outside a live area who asked to be told when we arrive. */
+export interface ServiceAreaInterest {
+  id: string;
+  mobile: string;
+  pincode: string;
+  district?: string;
+  createdAt: string;
+}
+
+export type ApplicationType = "PHARMACY" | "RIDER";
+export type ApplicationStatus = "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "MORE_INFO_REQUIRED" | "APPROVED" | "REJECTED" | "SUSPENDED";
+
+export interface ApplicationEvent {
+  id: string;
+  at: string;
+  actorId: string;
+  actorRole: Role | "SYSTEM";
+  type: "STARTED" | "SAVED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REMOVED" | "DOCUMENT_REVIEWED" | "SUBMITTED" | "REVIEW_STARTED" | "INFO_REQUESTED" | "APPROVED" | "REJECTED" | "SUSPENDED" | "REINSTATED" | "NOTE";
+  fromStatus?: ApplicationStatus;
+  toStatus?: ApplicationStatus;
+  note?: string;
+  /** Internal notes are visible to admins only, never to the applicant */
+  internal?: boolean;
+}
+
+/** A pharmacy or rider application. The partner record (Pharmacy / DeliveryPartner) only exists after approval. */
+export interface PartnerApplication {
+  id: string;
+  type: ApplicationType;
+  userId: string;
+  status: ApplicationStatus;
+  /** Index of the step the applicant is on (resume where they left off) */
+  step: number;
+  /** Answers per step: { owner: {...}, store: {...} }. Saved as drafts, fully validated on submit. */
+  data: Record<string, Record<string, unknown>>;
+  events: ApplicationEvent[];
+  /** Set on approval */
+  partnerId?: string;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+  decidedAt?: string;
+  decidedBy?: string;
+}
+
+export type DocumentKind =
+  | "DRUG_LICENSE" | "SHOP_IMAGE" | "PHARMACIST_CERTIFICATE" | "GST_CERTIFICATE" | "OTHER_BUSINESS"
+  | "ID_PROOF" | "DRIVING_LICENSE" | "VEHICLE_RC" | "PROFILE_PHOTO";
+export type DocumentStatus = "UPLOADED" | "APPROVED" | "REJECTED" | "REUPLOAD_REQUESTED";
+
+/** A private file belonging to an application. The bytes live in private storage; only an opaque key is kept here. */
+export interface PartnerDocument {
+  id: string;
+  applicationId: string;
+  uploadedBy: string;
+  kind: DocumentKind;
+  label?: string;
+  fileKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: DocumentStatus;
+  reviewNote?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
+/** "Please call me" from someone who finds the app hard. No account needed. */
+export interface CallbackRequest {
+  id: string;
+  mobile: string;
+  name?: string;
+  area: string;
+  reason: string;
+  status: "OPEN" | "CONTACTED" | "CLOSED";
+  note?: string;
+  handledBy?: string;
+  createdAt: string;
+}
+
+/** Permission, given by the customer, for a verified pharmacy to place one order for them. */
+export interface AssistedConsent {
+  id: string;
+  pharmacyId: string;
+  requestedBy: string;
+  customerUserId?: string;
+  mobile: string;
+  status: "PENDING" | "GRANTED" | "DENIED" | "EXPIRED" | "USED";
+  challengeId: string;
+  grantedAt?: string;
+  expiresAt: string;
+  orderId?: string;
+  createdAt: string;
+}
+
+export type AnalyticsEventName =
+  | "signup_started" | "otp_requested" | "otp_verified" | "location_selected" | "signup_completed"
+  | "pharmacy_registration_started" | "pharmacy_application_submitted" | "pharmacy_approved" | "inventory_added"
+  | "rider_registration_started" | "rider_application_submitted" | "first_order_completed";
+export interface AnalyticsRecord {
+  id: string;
+  name: AnalyticsEventName;
+  /** Signed-in person, or a random anonymous id. Never a mobile number, never anything medical. */
+  userId?: string;
+  anonId?: string;
+  props?: Record<string, string | number | boolean>;
+  at: string;
 }
 
 export interface FamilyMember {
@@ -60,6 +240,9 @@ export interface Address {
   landmark: string;
   houseDescription: string;
   location?: GeoPoint;
+  /** "Leave it with the guard", "call when you arrive" */
+  deliveryNotes?: string;
+  isDefault?: boolean;
 }
 
 export type MedicineCategory =
@@ -112,6 +295,16 @@ export interface Pharmacy {
   rating: number;
   ratingCount: number;
   acceptingOrders: boolean;
+  /** Set up after approval: checklist items that cannot be worked out from other data */
+  onboarding?: PharmacyOnboarding;
+}
+
+export interface PharmacyOnboarding {
+  deliverySettingsDone: boolean;
+  trainingDone: boolean;
+  walkthroughSeen: boolean;
+  /** Bank or UPI details for settlements. The account number is kept private and shown masked. */
+  settlement?: { holderName: string; accountNumber?: string; ifsc?: string; upiId?: string; savedAt: string };
 }
 
 /** Availability is always pharmacy-specific: one row per pharmacy + medicine + batch. */
@@ -245,6 +438,8 @@ export interface Order {
   cancelReason?: string;
   cancelledBy?: Role;
   isRepeat?: boolean;
+  /** Set when a verified pharmacy placed the order for the customer, with their consent */
+  assisted?: { pharmacyId: string; staffUserId: string; consentId: string };
   createdAt: string;
 }
 
@@ -380,7 +575,8 @@ export type NotificationEvent =
   | "ORDER_DELIVERED"
   | "ORDER_CANCELLED"
   | "REFILL_REMINDER"
-  | "MEDICINE_FOUND";
+  | "MEDICINE_FOUND"
+  | "APPLICATION_UPDATE";
 export type NotificationChannel = "SMS" | "WHATSAPP" | "PUSH" | "EMAIL";
 
 export interface Notification {
@@ -415,7 +611,6 @@ export interface ServiceArea {
   town?: string;
   pincode?: string;
   status: ServiceAreaStatus;
-  launchSignups: string[];
 }
 
 /** Saved medicines: a refill-ready list (cadence, next refill date, reminder flag) per person. */

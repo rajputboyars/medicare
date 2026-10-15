@@ -3,6 +3,7 @@ import type { DeliveryPartner, Order, RiderStatus, SessionUser } from "@/lib/typ
 import { badRequest, conflict, forbidden, notFound } from "@/server/errors";
 import { notify } from "@/server/features/notifications/notify";
 import { MAX_OTP_ATTEMPTS, otpMatches } from "@/server/features/delivery/otp";
+import { track } from "@/server/analytics";
 import { audit, db } from "@/server/store";
 import { ACTIVE_RIDER_STATUSES, assignPartner, deliveryOf, riderLoad, transition } from "@/server/features/orders/orders.service";
 
@@ -150,6 +151,7 @@ export function riderStep(user: SessionUser, orderId: string, step: RiderStep, c
       const pay = d.payments.find((x) => x.orderId === o.id);
       if (pay) { pay.status = "PAID"; pay.paidAt = now; }
     }
+    if (d.orders.filter((x) => x.userId === o.userId && x.status === "DELIVERED").length === 1) track("first_order_completed", { userId: o.userId });
     notify(o.userId, "ORDER_DELIVERED", "Order delivered", `Order ${o.code} was delivered. Thank you!`);
   } else {
     if (o.status !== "RIDER_ASSIGNED") throw conflict("You can only drop a delivery before pickup");

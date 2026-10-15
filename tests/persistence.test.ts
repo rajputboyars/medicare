@@ -55,7 +55,7 @@ describe.skipIf(!up)("MongoDB persistence", () => {
 
   it("keeps secrets that are select:false (password hashes, OTPs, file keys)", async () => {
     const loaded = await P.__testing.loadAll();
-    expect(loaded.users.every((u) => u.passwordHash.startsWith("$2"))).toBe(true);
+    expect(loaded.users.every((u) => (u.passwordHash === undefined || u.passwordHash.startsWith("$2")))).toBe(true);
     expect(loaded.deliveries.every((d) => d.otpNonce.length > 8 && /^[0-9a-f]{64}$/.test(d.pickupOtpHash) && /^[0-9a-f]{64}$/.test(d.deliveryOtpHash))).toBe(true);
     expect(JSON.stringify(loaded.deliveries)).not.toMatch(/"(pickupOtp|deliveryOtp)"/); // no plain code anywhere
     expect(loaded.prescriptions.every((p) => p.fileKey.length > 3)).toBe(true);

@@ -21,10 +21,13 @@ const PUBLIC: Record<string, string> = {
   "medicines/[id]/availability": "pharmacy-specific stock and price for a pincode",
   "offers": "public offers",
   "pharmacies/nearby": "public pharmacy list (verified only)",
-  "partners/pharmacy": "partner application form; rate limited",
-  "partners/rider": "partner application form; rate limited",
-  "quick-order": "guests can ask for a call-back; rate limited",
-  "medicine-requests": "guests can ask 'find my medicine'; GET needs sign-in",
+  "auth/otp/request": "step 1 of mobile sign-in; throttled per IP and per mobile",
+  "auth/otp/verify": "step 2; the code is hashed, expires, and allows 5 tries",
+  "auth/mfa/verify": "admin second factor; needs the mfaToken from the password step",
+  "location/resolve": "pincode or GPS to place and coverage; guests can search",
+  "partner/start": "needs a signupToken from a verified mobile",
+  "service-areas/interest": "leave a number for a coming-soon area; throttled",
+  "support/callback": "call-back request for people who find the app hard; throttled",
 };
 
 function routes(dir = API, out: string[] = []): string[] {
@@ -44,7 +47,7 @@ describe("every API route is guarded", () => {
     const rel = path.relative(API, path.dirname(file)).split(path.sep).join("/");
     it(`/api/${rel}`, () => {
       const src = fs.readFileSync(file, "utf8");
-      const guarded = /\b(requireUser|requireRole|currentUser)\(/.test(src);
+      const guarded = /\b(requireUser|requireRole|requireElevated|requireApplicant|currentUser)\(/.test(src);
       if (rel in PUBLIC) return; // reviewed as public
       expect(guarded, `/api/${rel} has no auth guard and is not on the public list`).toBe(true);
     });

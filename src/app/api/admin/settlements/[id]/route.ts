@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { handle, parseBody, requireUser } from "@/server/http";
+import { handle, parseBody, requireElevated } from "@/server/http";
 import { setSettlementStatus } from "@/server/features/admin/admin.service";
 
 export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
-  const u = await requireUser("admin:write");
+  const u = await requireElevated();
   const { status } = await parseBody(req, z.object({ status: z.enum(["PENDING", "PROCESSING", "PAID"]) }));
   return setSettlementStatus(u, (await ctx.params).id, status);
 });

@@ -9,7 +9,7 @@ import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory,
 import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
 import { bulkUploadCsv, customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
 import { createMedicineRequest, getCart, myRequests, openRequestsForPharmacy, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/features/medicine-requests/requests.service";
-import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, registerPharmacy, registerRider, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/features/admin/admin.service";
+import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/features/admin/admin.service";
 
 const customer: SessionUser = { id: "u_1", name: "Asha", role: "CUSTOMER" };
 const pharmacist: SessionUser = { id: "u_rx", name: "Kavita", role: "PHARMACIST", partnerId: "ph_1" };
@@ -470,23 +470,14 @@ describe("admin", () => {
     expect(coverageFor("261001").available).toBe(true);
     expect(coverageFor("110001").available).toBe(false);
     launchSignup("9000000009", "110001");
-    expect(db().serviceAreas.find((a) => a.pincode === "110001")!.launchSignups).toContain("9000000009");
+    expect(db().serviceAreaInterests.some((i) => i.pincode === "110001" && i.mobile === "9000000009")).toBe(true);
+    expect(db().serviceAreas.find((a) => a.pincode === "110001")!.status).toBe("COMING_SOON");
     expect(() => setVerification(admin, "pharmacies", "ph_5", "REJECTED")).toThrow(/reason/);
     setVerification(admin, "pharmacies", "ph_5", "VERIFIED");
     expect(db().pharmacies.find((p) => p.id === "ph_5")!.acceptingOrders).toBe(true);
     setVerification(admin, "pharmacies", "ph_5", "SUSPENDED", "Licence expired");
     expect(db().pharmacies.find((p) => p.id === "ph_5")!.acceptingOrders).toBe(false);
     expect(db().audit[0].action).toBe("VERIFICATION_SUSPENDED");
-  });
-  it("registers pharmacies and riders as pending; they cannot serve until verified", () => {
-    const { pharmacyId } = registerPharmacy({ ownerName: "A B", mobile: "9000011111", email: "new@pharm.example", password: "Strong123", name: "New Chemist", drugLicense: "UP-NEW-2026-1", address: "Main road", pincode: "261001", district: "Sitapur", servicePincodes: ["261001"], openTime: "09:00", closeTime: "21:00" });
-    expect(() => createOrder(customer, { ...base, pharmacyId, items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] })).toThrow(/not available/);
-    expect(() => registerPharmacy({ ownerName: "A", mobile: "9000022222", email: "x@y.example", password: "Strong123", name: "Dup", drugLicense: "UP-NEW-2026-1", address: "x y z", pincode: "261001", district: "Sitapur", servicePincodes: ["261001"], openTime: "09:00", closeTime: "21:00" })).toThrow(/already registered/);
-    const r = registerRider({ name: "New Rider", mobile: "9000033333", email: "nr@example.com", password: "Strong123", vehicle: "Scooter UP34 1234" });
-    const user: SessionUser = { id: db().users.find((u) => u.partnerId === r.partnerId)!.id, name: "New Rider", role: "DELIVERY_PARTNER", partnerId: r.partnerId };
-    expect(() => setAvailability(user, true)).toThrow(/verification/);
-    setVerification(admin, "riders", r.partnerId, "VERIFIED");
-    expect(setAvailability(user, true).available).toBe(true);
   });
   it("settlements: generated once per delivered order with commission, then progress forward only", () => {
     const o = readyOrder(); acceptDelivery(rider4, o.id);

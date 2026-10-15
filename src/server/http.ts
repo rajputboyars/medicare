@@ -14,9 +14,31 @@ import { failure, success } from "./core/response";
  *   rate limits  limit(bucket, max, windowMs, key?)
  */
 export { ApiError, badRequest, forbidden, notFound, conflict };
-export { currentUser, requireUser, requireRole, assertOwner, assertPharmacy } from "./core/guards";
+export { currentUser, requireUser, requireRole, requireElevated, requireApplicant, assertOwner, assertPharmacy } from "./core/guards";
 export { paginate } from "./core/pagination";
 export { Paged, WithMessage } from "./core/response";
+
+/**
+ * CSRF defence for cookie-authenticated requests, in three layers:
+ *  1. the session cookie is SameSite=Lax, so browsers do not attach it to cross-site POSTs
+ *  2. every state-changing request must come from our own origin: if the browser sends an Origin header it must match this host
+ *     (or an entry in ALLOWED_ORIGINS). Requests without Origin (server-to-server, tests) carry no browser cookies to abuse.
+ *  3. bodies are JSON or multipart behind that check, never accepted as a plain HTML form post without an Origin
+ */
+export function assertSameOrigin(req: Request) {
+  const origin = req.headers.get("origin");
+  if (!origin) return;
+  let host: string;
+  try { host = new URL(origin).host; } catch { throw new ApiError(403, "This request was blocked.", undefined, "CSRF_BLOCKED"); }
+  const own = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
+  const allowed = (process.env.ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean).map((o) => { try { return new URL(o).host; } catch { return o; } });
+  if (host !== own && !allowed.includes(host)) throw new ApiError(403, "This request was blocked.", undefined, "CSRF_BLOCKED");
+}
+
+/** Where the request came from, for sessions and OTP throttling. Never used for anything but security. */
+export async function requestMeta(req?: Request): Promise<{ ip: string; userAgent?: string }> {
+  return { ip: await clientKey(), userAgent: req?.headers.get("user-agent") ?? undefined };
+}
 
 export async function clientKey(): Promise<string> {
   const h = await headers();
@@ -63,6 +85,7 @@ export function handle<A extends unknown[]>(fn: (...args: A) => Promise<unknown>
     const req = args[0] instanceof Request ? args[0] : undefined;
     const mutating = !!req && req.method !== "GET" && req.method !== "HEAD";
     try {
+      if (mutating) assertSameOrigin(req!);
       const out = await fn(...args);
       if (mutating && persistenceActive()) await flush();
       if (out instanceof Response) return out;

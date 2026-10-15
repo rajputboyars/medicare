@@ -1,5 +1,5 @@
 import { serviceAreaSchema } from "@/lib/validation";
-import { handle, parseBody, requireUser } from "@/server/http";
+import { handle, parseBody, requireUser, requireElevated } from "@/server/http";
 import { addServiceArea, listServiceAreas } from "@/server/features/admin/admin.service";
 
 export const GET = handle(async () => {
@@ -7,6 +7,6 @@ export const GET = handle(async () => {
   return listServiceAreas();
 });
 export const POST = handle(async (req: Request) => {
-  const u = await requireUser("admin:write");
+  const u = await requireElevated();
   return addServiceArea(u, await parseBody(req, serviceAreaSchema));
 });

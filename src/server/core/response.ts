@@ -35,7 +35,7 @@ export function success(out: unknown): NextResponse<Envelope<unknown>> {
 
 export function failure(e: unknown): NextResponse<Envelope<null>> {
   if (e instanceof ApiError) {
-    const code = codeFor(e.status);
+    const code = e.code ?? codeFor(e.status);
     const errors: ApiErrorItem[] = e.fields && Object.keys(e.fields).length
       ? Object.entries(e.fields).map(([field, message]) => ({ code: "INVALID_FIELD", field, message }))
       : [{ code, message: e.message }];

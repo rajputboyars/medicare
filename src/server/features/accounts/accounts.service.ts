@@ -1,35 +1,14 @@
-import bcrypt from "bcryptjs";
-import type { Address, FamilyMember, SessionUser, User } from "@/lib/types";
-import { badRequest, conflict, forbidden, notFound } from "@/server/errors";
+import type { Address, FamilyMember, Language, SessionUser, User, UserPreferences } from "@/lib/types";
+import { badRequest, forbidden, notFound } from "@/server/errors";
 import { db, uid } from "@/server/store";
 
 export const toSession = (u: User): SessionUser => ({ id: u.id, name: u.name, role: u.role, partnerId: u.partnerId });
 
-export const publicUser = (u: User) => ({ id: u.id, name: u.name, mobile: u.mobile, email: u.email, role: u.role, partnerId: u.partnerId, language: u.language, consent: u.consent });
-
-export function authenticate(identifier: string, password: string): User {
-  const id = identifier.trim().toLowerCase();
-  const u = db().users.find((x) => x.mobile === id || x.email?.toLowerCase() === id);
-  // Constant-ish time: always run a compare so response timing doesn't reveal which accounts exist.
-  const hash = u?.passwordHash ?? "$2a$08$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv";
-  const ok = bcrypt.compareSync(password, hash);
-  if (!u || !ok) throw badRequest("Mobile/email or password is not correct");
-  return u;
-}
-
-export function registerUser(input: { name: string; mobile: string; email?: string; password: string }): User {
-  const d = db();
-  if (d.users.some((u) => u.mobile === input.mobile)) throw conflict("This mobile number is already registered. Please log in.");
-  if (input.email && d.users.some((u) => u.email?.toLowerCase() === input.email!.toLowerCase())) throw conflict("This email is already registered.");
-  const user: User = {
-    id: uid("u"), name: input.name, mobile: input.mobile, email: input.email || undefined,
-    passwordHash: bcrypt.hashSync(input.password, 10), role: "CUSTOMER", language: "en",
-    consent: { healthData: true, marketing: false, acceptedAt: new Date().toISOString() }, createdAt: new Date().toISOString(),
-  };
-  d.users.push(user);
-  d.familyMembers.push({ id: uid("fm"), userId: user.id, name: user.name, age: 30, gender: "OTHER", relationship: "SELF", currentMedicines: [] });
-  return user;
-}
+/** What the app may know about a person. Never the password hash, lock-out counters or MFA details. */
+export const publicUser = (u: User) => ({
+  id: u.id, name: u.name, mobile: u.mobile, email: u.email, role: u.role, partnerId: u.partnerId, language: u.language,
+  pincode: u.pincode, district: u.district, preferences: u.preferences, consent: u.consent, mfaEnabled: !!u.mfa?.enabled,
+});
 
 export function listFamily(userId: string) {
   return db().familyMembers.filter((f) => f.userId === userId);
@@ -59,11 +38,28 @@ export function deleteFamily(userId: string, id: string) {
   d.familyMembers = d.familyMembers.filter((x) => x.id !== id);
 }
 
-export const listAddresses = (userId: string) => db().addresses.filter((a) => a.userId === userId);
+export const listAddresses = (userId: string) =>
+  db().addresses.filter((a) => a.userId === userId).sort((x, y) => Number(!!y.isDefault) - Number(!!x.isDefault));
 
+/** Addresses are collected at checkout, not at signup. The first one saved becomes the default. */
 export function saveAddress(userId: string, input: Omit<Address, "id" | "userId">): Address {
-  const a: Address = { id: uid("ad"), userId, ...input };
-  db().addresses.push(a);
+  const d = db();
+  const mine = d.addresses.filter((a) => a.userId === userId);
+  const makeDefault = !!input.isDefault || mine.length === 0;
+  if (makeDefault) for (const a of mine) a.isDefault = false;
+  const a: Address = { id: uid("ad"), userId, ...input, isDefault: makeDefault };
+  d.addresses.push(a);
+  return a;
+}
+
+export function updateAddress(userId: string, id: string, input: Partial<Omit<Address, "id" | "userId">>): Address {
+  const d = db();
+  const a = d.addresses.find((x) => x.id === id);
+  if (!a) throw notFound();
+  if (a.userId !== userId) throw forbidden();
+  const { isDefault, ...rest } = input;
+  Object.assign(a, rest);
+  if (isDefault) { for (const o of d.addresses) if (o.userId === userId) o.isDefault = false; a.isDefault = true; }
   return a;
 }
 
@@ -73,6 +69,9 @@ export function deleteAddress(userId: string, id: string) {
   if (!a) throw notFound();
   if (a.userId !== userId) throw forbidden();
   d.addresses = d.addresses.filter((x) => x.id !== id);
+  // If the default was removed, the newest remaining address takes over
+  const rest = d.addresses.filter((x) => x.userId === userId);
+  if (a.isDefault && rest.length) rest[rest.length - 1].isDefault = true;
 }
 
 /** Privacy controls: export everything the platform holds about this user (without file contents). */
@@ -89,7 +88,14 @@ export function exportUserData(userId: string) {
   };
 }
 
-export function updateConsent(userId: string, patch: { healthData?: boolean; marketing?: boolean; language?: "en" | "hi" }) {
+export function updatePreferences(userId: string, patch: Partial<UserPreferences>) {
+  const u = db().users.find((x) => x.id === userId);
+  if (!u) throw notFound();
+  u.preferences = { ...u.preferences, ...patch };
+  return publicUser(u);
+}
+
+export function updateConsent(userId: string, patch: { healthData?: boolean; marketing?: boolean; language?: Language }) {
   const u = db().users.find((x) => x.id === userId);
   if (!u) throw notFound();
   if (patch.healthData !== undefined) u.consent.healthData = patch.healthData;

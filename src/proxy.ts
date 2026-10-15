@@ -24,7 +24,8 @@ export async function proxy(req: NextRequest) {
     }
   }
 
-  const needsLogin = ["/orders", "/profile", "/family", "/checkout", "/repeat"];
+  // Pages that need a signed-in customer. This only improves the experience (a redirect instead of an error): the API enforces it.
+  const needsLogin = ["/orders", "/profile", "/family", "/checkout", "/repeat", "/upload-prescription", "/find-medicine", "/quick-order"];
   if (!session && needsLogin.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";

@@ -296,6 +296,9 @@ function ownPharmacyOrder(user: SessionUser, orderId: string): Order {
   const o = db().orders.find((x) => x.id === orderId);
   if (!o) throw notFound("Order not found");
   if (user.role !== "SUPER_ADMIN" && o.pharmacyId !== user.partnerId) throw forbidden();
+  // A suspended or unapproved pharmacy cannot work orders
+  const ph = db().pharmacies.find((p) => p.id === o.pharmacyId);
+  if (user.role !== "SUPER_ADMIN" && ph?.verification !== "VERIFIED") throw forbidden("Your pharmacy is not active. Please contact support.");
   return o;
 }
 
@@ -415,7 +418,11 @@ export function assignRider(user: SessionUser, orderId: string, partnerId?: stri
 }
 
 export function pharmacyOrders(user: SessionUser): Order[] {
-  return db().orders.filter((o) => o.pharmacyId === user.partnerId);
+  // Same gate as every pharmacy action: an applicant (no pharmacy yet) or a suspended pharmacy sees nothing, not an empty list.
+  const ph = db().pharmacies.find((p) => p.id === user.partnerId);
+  if (!ph) throw forbidden("Your pharmacy is not approved yet");
+  if (ph.verification !== "VERIFIED") throw forbidden("Your pharmacy is not active. Please contact support.");
+  return db().orders.filter((o) => o.pharmacyId === ph.id);
 }
 
 /** What a pharmacy sees of an order: items and the patient name/age/allergies it needs; area, not full address. */

@@ -14,10 +14,11 @@ export const ANALYTICS_EVENTS: readonly AnalyticsEventName[] = [
   "signup_started", "otp_requested", "otp_verified", "location_selected", "signup_completed",
   "pharmacy_registration_started", "pharmacy_application_submitted", "pharmacy_approved", "inventory_added",
   "rider_registration_started", "rider_application_submitted", "first_order_completed",
+  "medicine_search", "search_no_result", "medicine_selected", "availability_viewed", "pharmacy_selected", "medicine_added_to_cart", "find_medicine_clicked",
 ];
 
 /** Events the browser may report itself (the rest are only ever recorded by the server). */
-export const CLIENT_EVENTS: readonly AnalyticsEventName[] = ["signup_started", "location_selected", "pharmacy_registration_started", "rider_registration_started"];
+export const CLIENT_EVENTS: readonly AnalyticsEventName[] = ["signup_started", "location_selected", "pharmacy_registration_started", "rider_registration_started", "medicine_selected", "pharmacy_selected", "medicine_added_to_cart", "find_medicine_clicked"];
 
 export interface AnalyticsSink { name: string; handle(event: AnalyticsRecord): void }
 

@@ -20,10 +20,11 @@ import { db } from "@/server/store";
 
 const now = () => new Date().toISOString();
 
+/** A batch is orderable only if it is ACTIVE, not expired and has units that are not already promised. Expired stock is kept for history but never sold. */
 /** Valid (unexpired, available) batches for one pharmacy + medicine, earliest expiry first (FEFO). */
 export function validBatches(pharmacyId: string, medicineId: string, at = Date.now()): PharmacyInventory[] {
   return db()
-    .inventory.filter((i) => i.pharmacyId === pharmacyId && i.medicineId === medicineId && availableQuantity(i) > 0 && Date.parse(i.expiry) > at)
+    .inventory.filter((i) => i.pharmacyId === pharmacyId && i.medicineId === medicineId && i.status !== "INACTIVE" && availableQuantity(i) > 0 && Date.parse(i.expiry) > at)
     .sort((a, b) => Date.parse(a.expiry) - Date.parse(b.expiry));
 }
 

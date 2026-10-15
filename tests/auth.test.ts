@@ -555,7 +555,7 @@ describe("analytics: vendor-neutral, no personal data", () => {
     const names = db().analytics.map((e) => e.name);
     for (const n of ["otp_requested", "otp_verified", "location_selected", "signup_completed"]) expect(names).toContain(n);
     expect(JSON.stringify(db().analytics)).not.toContain(MOBILE);
-    expect(ANALYTICS_EVENTS).toHaveLength(12);
+    expect(ANALYTICS_EVENTS).toHaveLength(19);
   });
   it("the browser may only report a few harmless events", async () => {
     const h = (await route("analytics/event")).POST;

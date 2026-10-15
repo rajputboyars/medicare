@@ -2,7 +2,7 @@
 import { api } from "./api";
 
 /** Events the browser may report. The server decides what to do with them (any analytics vendor sits behind it). */
-export type ClientEvent = "signup_started" | "location_selected" | "pharmacy_registration_started" | "rider_registration_started";
+export type ClientEvent = "signup_started" | "location_selected" | "pharmacy_registration_started" | "rider_registration_started" | "medicine_selected" | "pharmacy_selected" | "medicine_added_to_cart" | "find_medicine_clicked";
 
 function anonId(): string {
   try {

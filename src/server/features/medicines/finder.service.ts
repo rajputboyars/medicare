@@ -3,6 +3,7 @@ import { estimateEta } from "@/lib/eta";
 import type { GeoPoint, Medicine, Pharmacy } from "@/lib/types";
 import { db } from "@/server/store";
 import { stockFor } from "@/server/features/inventory/stock";
+import { rankMedicines } from "@/server/features/catalog/search-core";
 
 export interface PharmacyOffer {
   pharmacyId: string;
@@ -76,24 +77,17 @@ export interface SearchParams {
   limit?: number;
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-
 export function searchMedicines(p: SearchParams): MedicineResult[] {
-  const q = norm(p.q ?? "");
-  const tokens = q.split(" ").filter(Boolean);
   const center = pincodeCenter(p.pincode);
+  const ranked = p.q?.trim()
+    ? rankMedicines(p.q)
+    : db().medicines.filter((m) => m.status === "ACTIVE").map((medicine) => ({ medicine, score: 0 }));
   const results: (MedicineResult & { score: number })[] = [];
-  for (const m of db().medicines) {
+  for (const { medicine: m, score } of ranked) {
     if (p.category && m.category !== p.category) continue;
     if (p.brand && m.brand.toLowerCase() !== p.brand.toLowerCase()) continue;
     if (p.rx === "yes" && !m.prescriptionRequired) continue;
     if (p.rx === "no" && m.prescriptionRequired) continue;
-    const hay = norm(`${m.name} ${m.generic} ${m.brand} ${m.category}`);
-    let score = 0;
-    if (tokens.length) {
-      if (!tokens.every((t) => hay.includes(t))) continue;
-      score = hay.startsWith(q) ? 3 : norm(m.name).includes(q) ? 2 : 1;
-    }
     const offers = offersFor(m.id, p.pincode, center).sort((a, b) => a.distanceKm - b.distanceKm);
     if (p.maxPrice && !(offers.length ? offers.some((o) => o.sellingPrice <= p.maxPrice!) : m.mrp <= p.maxPrice)) continue;
     if (p.availableNearby && !offers.length) continue;

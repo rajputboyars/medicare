@@ -47,7 +47,7 @@ export function MedicineCard({ r, strategy, preferredId }: { r: MedicineResult; 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="t-card"><Link href={`/medicines/${m.id}`} className="hover:underline">{m.name}</Link></h3>
-          <p className="t-support">{m.generic} · {m.strength} · {m.form}</p>
+          <p className="t-support">{m.genericName} · {m.strength} · {m.dosageForm}</p>
         </div>
         <div className="shrink-0 text-right">
           <p className="t-caption">{r.available ? "Starting at" : "MRP"}</p>

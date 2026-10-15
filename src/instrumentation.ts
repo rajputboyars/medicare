@@ -18,14 +18,14 @@ export async function register() {
 
   const g = globalThis as unknown as { __mcSweeper?: ReturnType<typeof setInterval> };
   if (g.__mcSweeper) return;
-  const { expireUnpaidOrders } = await import("./server/features/orders/orders.service");
+  const { expireReservations } = await import("./server/features/orders/orders.service");
   const { expireStaleRequests } = await import("./server/features/medicine-requests/requests.service");
   const { flush, persistenceActive } = await import("./server/persistence");
   const { purgeOtpChallenges } = await import("./server/features/auth/otp.service");
   const { purgeSessions } = await import("./server/features/auth/session.service");
   g.__mcSweeper = setInterval(() => {
     try {
-      const changed = expireUnpaidOrders() + expireStaleRequests() + purgeOtpChallenges() + purgeSessions();
+      const changed = expireReservations() + expireStaleRequests() + purgeOtpChallenges() + purgeSessions();
       if (changed && persistenceActive()) void flush();
     } catch (e) {
       console.error("[sweeper] failed", e);

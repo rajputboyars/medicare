@@ -56,6 +56,9 @@ const SINKS: Sink[] = [
   simple("carts", M.Cart, "carts"),
   simple("orderStatusHistory", M.OrderStatusHistory, "orderStatusHistory"),
   simple("sessions", M.Session, "sessions"),
+  simple("searchHistory", M.SearchHistory, "searchHistory"),
+  simple("inventoryImports", M.InventoryImport, "inventoryImports"),
+  simple("matchReviews", M.MedicineMatchReview, "matchReviews"),
   simple("otpChallenges", M.OtpChallenge, "otpChallenges"),
   simple("serviceAreaInterests", M.ServiceAreaInterest, "serviceAreaInterests"),
   simple("partnerApplications", M.PartnerApplication, "partnerApplications"),
@@ -240,7 +243,9 @@ export async function initMongoStore(): Promise<void> {
     console.info("[persistence] empty database seeded with demo data");
   } else {
     // Databases written before the reservation/OTP-hash redesign cannot be read safely: stop with a clear instruction.
-    const legacy = (await M.PharmacyInventory.collection.findOne({ stockQuantity: { $exists: false } })) ?? (await M.ServiceArea.collection.findOne({ launchSignups: { $exists: true } }));
+    const legacy = (await M.PharmacyInventory.collection.findOne({ stockQuantity: { $exists: false } }))
+      ?? (await M.ServiceArea.collection.findOne({ launchSignups: { $exists: true } }))
+      ?? (await M.Medicine.collection.findOne({ normalizedName: { $exists: false } }));
     if (legacy) throw new Error("This database was created by an older version of DawaDost. Run \"npm run db:reset\" to rebuild the demo data.");
     const loaded = await loadAll();
     setDb(loaded);

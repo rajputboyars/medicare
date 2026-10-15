@@ -38,7 +38,7 @@ export default function MedicineDetail({ params }: { params: Promise<{ id: strin
         const lowest = [...offers].sort((a, b) => a.sellingPrice - b.sellingPrice)[0];
         return (
           <>
-            <PageTitle back={{ href: "/medicines", label: "All medicines" }} title={m.name} subtitle={`${m.generic} · ${m.strength} · ${m.form} · ${m.packSize}`} />
+            <PageTitle back={{ href: "/medicines", label: "All medicines" }} title={m.name} subtitle={`${m.genericName} · ${m.strength} · ${m.dosageForm} · ${m.packSize}`} />
             <div className="mb-4 flex flex-wrap gap-1.5"><PrescriptionBadge required={m.prescriptionRequired} restricted={m.restricted} /><Badge tone="blue">Brand: {m.brand}</Badge></div>
             {m.prescriptionRequired && <div className="mb-4"><Notice tone="amber" title="A pharmacist will verify your prescription">Your order is confirmed only after the pharmacist approves it. We never swap medicines on our own.</Notice></div>}
 

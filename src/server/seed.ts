@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import type * as T from "@/lib/types";
 import { DEFAULT_PREFERENCES } from "@/lib/types";
+import { buildMedicine } from "@/lib/medicine-fields";
 import { deriveOtp, hashOtp, newNonce } from "@/server/features/delivery/otp";
 
 /**
@@ -16,6 +17,9 @@ export interface Db {
   medicines: T.Medicine[];
   pharmacies: T.Pharmacy[];
   inventory: T.PharmacyInventory[];
+  searchHistory: T.SearchHistoryEntry[];
+  inventoryImports: T.InventoryImport[];
+  matchReviews: T.MedicineMatchReview[];
   prescriptions: T.Prescription[];
   carts: T.Cart[];
   orders: T.Order[];
@@ -59,28 +63,40 @@ export const DEFAULT_SETTINGS: T.PlatformSettings & { id: string } = {
 const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString();
 const daysAhead = (n: number) => new Date(Date.now() + n * 86400_000).toISOString();
 
-type M = Omit<T.Medicine, "id">;
+type M = Pick<T.Medicine, "name" | "genericName" | "brand" | "strength" | "dosageForm" | "packSize" | "category" | "mrp" | "prescriptionRequired" | "restricted">;
+
+/** Makers and aliases for the demo catalogue (a real catalogue would come from a licensed drug database). */
+const MAKERS: Record<string, string> = {
+  Glycomet: "USV Ltd", Amaryl: "Sanofi India", Telma: "Glenmark Pharmaceuticals", Amlong: "Micro Labs", Thyronorm: "Abbott India", Asthalin: "Cipla", Dolo: "Micro Labs",
+  Crocin: "GSK Consumer Healthcare", Zyrtec: "GSK Consumer Healthcare", Brufen: "Abbott India", Becosules: "Pfizer", Shelcal: "Torrent Pharmaceuticals",
+};
+const EXTRA: Record<string, { searchAliases?: string[]; searchKeywords?: string[]; description?: string }> = {
+  "Telmisartan 40": { searchAliases: ["Telma 40", "Telmikind 40"], description: "Telmisartan 40 mg tablets" },
+  "Paracetamol 650": { searchAliases: ["Dolo 650", "Dolo650"], searchKeywords: ["fever", "pain"] },
+  "Metformin 500": { searchAliases: ["Glycomet 500", "Glucophage 500"] },
+  "Amlodipine 5": { searchAliases: ["Amlong 5", "Amlodac 5"] },
+};
 export const MEDS: M[] = [
-  { name: "Metformin 500", generic: "Metformin", brand: "Glycomet", strength: "500 mg", form: "Tablet", packSize: "20 tablets", category: "Diabetes", mrp: 32, prescriptionRequired: true, restricted: false },
-  { name: "Glimepiride 1", generic: "Glimepiride", brand: "Amaryl", strength: "1 mg", form: "Tablet", packSize: "30 tablets", category: "Diabetes", mrp: 118, prescriptionRequired: true, restricted: false },
-  { name: "Telmisartan 40", generic: "Telmisartan", brand: "Telma", strength: "40 mg", form: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 142, prescriptionRequired: true, restricted: false },
-  { name: "Amlodipine 5", generic: "Amlodipine", brand: "Amlong", strength: "5 mg", form: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 58, prescriptionRequired: true, restricted: false },
-  { name: "Thyronorm 50", generic: "Levothyroxine", brand: "Thyronorm", strength: "50 mcg", form: "Tablet", packSize: "100 tablets", category: "Thyroid", mrp: 218, prescriptionRequired: true, restricted: false },
-  { name: "Asthalin Inhaler", generic: "Salbutamol", brand: "Asthalin", strength: "100 mcg/dose", form: "Inhaler", packSize: "200 doses", category: "Asthma", mrp: 168, prescriptionRequired: true, restricted: false },
-  { name: "Paracetamol 650", generic: "Paracetamol", brand: "Dolo", strength: "650 mg", form: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 33, prescriptionRequired: false, restricted: false },
-  { name: "Crocin Advance", generic: "Paracetamol", brand: "Crocin", strength: "500 mg", form: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 24, prescriptionRequired: false, restricted: false },
-  { name: "Ibuprofen 400", generic: "Ibuprofen", brand: "Brufen", strength: "400 mg", form: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 28, prescriptionRequired: false, restricted: false },
-  { name: "Amoxicillin 500", generic: "Amoxicillin", brand: "Mox", strength: "500 mg", form: "Capsule", packSize: "10 capsules", category: "Antibiotic", mrp: 74, prescriptionRequired: true, restricted: false },
-  { name: "Azithromycin 500", generic: "Azithromycin", brand: "Azithral", strength: "500 mg", form: "Tablet", packSize: "5 tablets", category: "Antibiotic", mrp: 118, prescriptionRequired: true, restricted: false },
-  { name: "Alprazolam 0.25", generic: "Alprazolam", brand: "Alprax", strength: "0.25 mg", form: "Tablet", packSize: "10 tablets", category: "Mental Health", mrp: 24, prescriptionRequired: true, restricted: true },
-  { name: "Pantoprazole 40", generic: "Pantoprazole", brand: "Pan", strength: "40 mg", form: "Tablet", packSize: "15 tablets", category: "Stomach", mrp: 168, prescriptionRequired: true, restricted: false },
-  { name: "ORS Electral", generic: "Oral Rehydration Salts", brand: "Electral", strength: "21.8 g", form: "Sachet", packSize: "5 sachets", category: "Stomach", mrp: 40, prescriptionRequired: false, restricted: false },
-  { name: "Cetirizine 10", generic: "Cetirizine", brand: "Okacet", strength: "10 mg", form: "Tablet", packSize: "10 tablets", category: "Cold & Cough", mrp: 22, prescriptionRequired: false, restricted: false },
-  { name: "Benadryl Cough Syrup", generic: "Diphenhydramine", brand: "Benadryl", strength: "150 ml", form: "Syrup", packSize: "150 ml", category: "Cold & Cough", mrp: 98, prescriptionRequired: false, restricted: false },
-  { name: "Vitamin D3 60K", generic: "Cholecalciferol", brand: "Uprise-D3", strength: "60000 IU", form: "Capsule", packSize: "4 capsules", category: "Vitamins", mrp: 130, prescriptionRequired: false, restricted: false },
-  { name: "Betadine Ointment", generic: "Povidone Iodine", brand: "Betadine", strength: "5%", form: "Ointment", packSize: "20 g", category: "Skin", mrp: 86, prescriptionRequired: false, restricted: false },
-  { name: "Digital Thermometer", generic: "Thermometer", brand: "Dr Morepen", strength: "—", form: "Device", packSize: "1 unit", category: "Health Essentials", mrp: 210, prescriptionRequired: false, restricted: false },
-  { name: "Insulin Glargine Pen", generic: "Insulin Glargine", brand: "Basalog", strength: "100 IU/ml", form: "Injection", packSize: "3 ml pen", category: "Diabetes", mrp: 640, prescriptionRequired: true, restricted: false },
+  { name: "Metformin 500", genericName: "Metformin", brand: "Glycomet", strength: "500 mg", dosageForm: "Tablet", packSize: "20 tablets", category: "Diabetes", mrp: 32, prescriptionRequired: true, restricted: false },
+  { name: "Glimepiride 1", genericName: "Glimepiride", brand: "Amaryl", strength: "1 mg", dosageForm: "Tablet", packSize: "30 tablets", category: "Diabetes", mrp: 118, prescriptionRequired: true, restricted: false },
+  { name: "Telmisartan 40", genericName: "Telmisartan", brand: "Telma", strength: "40 mg", dosageForm: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 142, prescriptionRequired: true, restricted: false },
+  { name: "Amlodipine 5", genericName: "Amlodipine", brand: "Amlong", strength: "5 mg", dosageForm: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 58, prescriptionRequired: true, restricted: false },
+  { name: "Thyronorm 50", genericName: "Levothyroxine", brand: "Thyronorm", strength: "50 mcg", dosageForm: "Tablet", packSize: "100 tablets", category: "Thyroid", mrp: 218, prescriptionRequired: true, restricted: false },
+  { name: "Asthalin Inhaler", genericName: "Salbutamol", brand: "Asthalin", strength: "100 mcg/dose", dosageForm: "Inhaler", packSize: "200 doses", category: "Asthma", mrp: 168, prescriptionRequired: true, restricted: false },
+  { name: "Paracetamol 650", genericName: "Paracetamol", brand: "Dolo", strength: "650 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 33, prescriptionRequired: false, restricted: false },
+  { name: "Crocin Advance", genericName: "Paracetamol", brand: "Crocin", strength: "500 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 24, prescriptionRequired: false, restricted: false },
+  { name: "Ibuprofen 400", genericName: "Ibuprofen", brand: "Brufen", strength: "400 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 28, prescriptionRequired: false, restricted: false },
+  { name: "Amoxicillin 500", genericName: "Amoxicillin", brand: "Mox", strength: "500 mg", dosageForm: "Capsule", packSize: "10 capsules", category: "Antibiotic", mrp: 74, prescriptionRequired: true, restricted: false },
+  { name: "Azithromycin 500", genericName: "Azithromycin", brand: "Azithral", strength: "500 mg", dosageForm: "Tablet", packSize: "5 tablets", category: "Antibiotic", mrp: 118, prescriptionRequired: true, restricted: false },
+  { name: "Alprazolam 0.25", genericName: "Alprazolam", brand: "Alprax", strength: "0.25 mg", dosageForm: "Tablet", packSize: "10 tablets", category: "Mental Health", mrp: 24, prescriptionRequired: true, restricted: true },
+  { name: "Pantoprazole 40", genericName: "Pantoprazole", brand: "Pan", strength: "40 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Stomach", mrp: 168, prescriptionRequired: true, restricted: false },
+  { name: "ORS Electral", genericName: "Oral Rehydration Salts", brand: "Electral", strength: "21.8 g", dosageForm: "Sachet", packSize: "5 sachets", category: "Stomach", mrp: 40, prescriptionRequired: false, restricted: false },
+  { name: "Cetirizine 10", genericName: "Cetirizine", brand: "Okacet", strength: "10 mg", dosageForm: "Tablet", packSize: "10 tablets", category: "Cold & Cough", mrp: 22, prescriptionRequired: false, restricted: false },
+  { name: "Benadryl Cough Syrup", genericName: "Diphenhydramine", brand: "Benadryl", strength: "150 ml", dosageForm: "Syrup", packSize: "150 ml", category: "Cold & Cough", mrp: 98, prescriptionRequired: false, restricted: false },
+  { name: "Vitamin D3 60K", genericName: "Cholecalciferol", brand: "Uprise-D3", strength: "60000 IU", dosageForm: "Capsule", packSize: "4 capsules", category: "Vitamins", mrp: 130, prescriptionRequired: false, restricted: false },
+  { name: "Betadine Ointment", genericName: "Povidone Iodine", brand: "Betadine", strength: "5%", dosageForm: "Ointment", packSize: "20 g", category: "Skin", mrp: 86, prescriptionRequired: false, restricted: false },
+  { name: "Digital Thermometer", genericName: "Thermometer", brand: "Dr Morepen", strength: "—", dosageForm: "Device", packSize: "1 unit", category: "Health Essentials", mrp: 210, prescriptionRequired: false, restricted: false },
+  { name: "Insulin Glargine Pen", genericName: "Insulin Glargine", brand: "Basalog", strength: "100 IU/ml", dosageForm: "Injection", packSize: "3 ml pen", category: "Diabetes", mrp: 640, prescriptionRequired: true, restricted: false },
 ];
 
 /** Stable ids used by tests and the smoke script. */
@@ -102,7 +118,7 @@ const PNG_1PX = Uint8Array.from(Buffer.from("89504e470d0a1a0a0000000d49484452000
 export function buildSeed(): Db {
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 8);
   const consent = { healthData: true, marketing: false, acceptedAt: hoursAgo(24 * 30) };
-  const medicines: T.Medicine[] = MEDS.map((m, i) => ({ ...m, id: `med_${i + 1}` }));
+  const medicines: T.Medicine[] = MEDS.map((m, i) => buildMedicine(`med_${i + 1}`, { ...m, manufacturer: MAKERS[m.brand] ?? "Various", ...(EXTRA[m.name] ?? {}) }, hoursAgo(24 * 120)));
 
   // ---------- Pharmacies (4 verified, 1 pending KYC) ----------
   const pharmacies: T.Pharmacy[] = [
@@ -331,7 +347,7 @@ export function buildSeed(): Db {
 
   return {
     users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory,
-    sessions: [], otpChallenges: [], serviceAreaInterests: [], callbackRequests: [], assistedConsents: [], analytics: [],
+    searchHistory: [], inventoryImports: [], matchReviews: [], sessions: [], otpChallenges: [], serviceAreaInterests: [], callbackRequests: [], assistedConsents: [], analytics: [],
     partnerApplications, partnerDocuments, deliveryPartners, deliveries, payments,
     settlements: [
       { id: "set_1", partnerType: "PHARMACY", partnerId: "ph_1", periodStart: hoursAgo(24 * 37), periodEnd: hoursAgo(24 * 7), orderCount: 2, gross: orders[0].total + orders[6].total, commission: Math.round((orders[0].total + orders[6].total) * 0.08), net: Math.round((orders[0].total + orders[6].total) * 0.92), status: "PAID", createdAt: hoursAgo(24 * 7) },

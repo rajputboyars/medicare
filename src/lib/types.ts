@@ -38,6 +38,8 @@ export interface User {
   pincode?: string;
   district?: string;
   preferences: UserPreferences;
+  /** Pharmacies the customer marked as preferred. Shown as a badge; never used to hide other pharmacies. */
+  favoritePharmacyIds?: string[];
   consent: { healthData: boolean; marketing: boolean; acceptedAt?: string };
   /** ACTIVE accounts can sign in. SUSPENDED accounts are refused and their sessions are revoked. */
   status: "ACTIVE" | "SUSPENDED";
@@ -107,6 +109,51 @@ export interface ServiceAreaInterest {
   mobile: string;
   pincode: string;
   district?: string;
+  createdAt: string;
+}
+
+/** A signed-in customer's recent searches. Private: only that customer can read or clear them. */
+export interface SearchHistoryEntry { id: string; userId: string; query: string; at: string }
+
+export type ImportRowStatus = "MATCHED" | "POSSIBLE_MATCH" | "NOT_FOUND" | "INVALID";
+export interface ImportRow {
+  line: number;
+  status: ImportRowStatus;
+  /** What the pharmacy typed (cleaned) */
+  input: { medicineName: string; genericName?: string; strength?: string; manufacturer?: string; batch?: string; expiry?: string; mrp?: number; sellingPrice?: number; stock?: number };
+  medicineId?: string;
+  /** For POSSIBLE_MATCH: the candidates to choose from */
+  candidates?: { medicineId: string; name: string; strength: string; score: number }[];
+  errors?: string[];
+  /** After confirm */
+  outcome?: "IMPORTED" | "SENT_TO_REVIEW" | "SKIPPED";
+}
+export interface InventoryImport {
+  id: string;
+  pharmacyId: string;
+  createdBy: string;
+  status: "PREVIEW" | "CONFIRMED" | "CANCELLED";
+  fileName: string;
+  rows: ImportRow[];
+  createdAt: string;
+  confirmedAt?: string;
+  imported?: number;
+  sentToReview?: number;
+}
+
+/** An inventory line whose medicine is not in the master catalogue. Held for an admin: match it, create it, or reject it. */
+export interface MedicineMatchReview {
+  id: string;
+  pharmacyId: string;
+  importId: string;
+  line: number;
+  input: ImportRow["input"];
+  candidates?: ImportRow["candidates"];
+  status: "PENDING" | "MATCHED" | "CREATED" | "REJECTED";
+  resolvedMedicineId?: string;
+  note?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
   createdAt: string;
 }
 
@@ -200,7 +247,8 @@ export interface AssistedConsent {
 export type AnalyticsEventName =
   | "signup_started" | "otp_requested" | "otp_verified" | "location_selected" | "signup_completed"
   | "pharmacy_registration_started" | "pharmacy_application_submitted" | "pharmacy_approved" | "inventory_added"
-  | "rider_registration_started" | "rider_application_submitted" | "first_order_completed";
+  | "rider_registration_started" | "rider_application_submitted" | "first_order_completed"
+  | "medicine_search" | "search_no_result" | "medicine_selected" | "availability_viewed" | "pharmacy_selected" | "medicine_added_to_cart" | "find_medicine_clicked";
 export interface AnalyticsRecord {
   id: string;
   name: AnalyticsEventName;
@@ -259,19 +307,41 @@ export type MedicineCategory =
   | "Skin"
   | "Health Essentials";
 
+export type DosageForm = "Tablet" | "Capsule" | "Syrup" | "Injection" | "Inhaler" | "Ointment" | "Drops" | "Device" | "Sachet";
+export type MedicineStatus = "ACTIVE" | "INACTIVE";
+
+/**
+ * The MASTER catalogue: what a product IS. One record per product for the whole platform.
+ * Pharmacies never get their own copy; their price, stock, batch and expiry live in PharmacyInventory.
+ */
 export interface Medicine {
   id: string;
   name: string;
-  generic: string;
+  /** Lower-case, punctuation-free, digits split from letters: "Telma-40" → "telma 40". Derived on every save. */
+  normalizedName: string;
+  genericName: string;
+  normalizedGenericName: string;
   brand: string;
+  manufacturer: string;
   strength: string;
-  form: "Tablet" | "Capsule" | "Syrup" | "Injection" | "Inhaler" | "Ointment" | "Drops" | "Device" | "Sachet";
+  dosageForm: DosageForm;
   packSize: string;
   category: MedicineCategory;
+  /** Reference MRP for the pack. The selling MRP of a batch is on the inventory row. */
   mrp: number;
   prescriptionRequired: boolean;
   /** Restricted (e.g. Schedule H1/X): never orderable without an already-approved prescription. */
   restricted: boolean;
+  /** Other names people use ("Dolo", "paracetamol 650") */
+  searchAliases: string[];
+  /** Extra words that should find this medicine (symptoms are NOT stored here: names and common spellings only) */
+  searchKeywords: string[];
+  image?: string;
+  description?: string;
+  /** INACTIVE medicines disappear from search and cannot be ordered, but old orders keep their snapshot */
+  status: MedicineStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Pharmacy {
@@ -321,9 +391,18 @@ export interface PharmacyInventory {
   /** Units promised to open orders. availableQuantity = stockQuantity - reservedQuantity. */
   reservedQuantity: number;
   lowStockThreshold: number;
-  /** When this stock line was last changed: shown to customers as "Updated 2h ago". */
+  /** When this stock line was last changed: shown to customers as "Updated 2h ago". (Spec name: lastStockUpdateAt) */
   lastUpdatedAt: string;
+  /** INACTIVE rows are kept for history but never offered to customers */
+  status?: InventoryStatus;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type InventoryStatus = "ACTIVE" | "INACTIVE";
+export type StockConfidence = "HIGH" | "MEDIUM" | "LOW";
+export type ExpiryState = "EXPIRED" | "EXPIRING_30" | "EXPIRING_90" | "OK";
 
 export const availableQuantity = (i: Pick<PharmacyInventory, "stockQuantity" | "reservedQuantity">) => Math.max(0, i.stockQuantity - i.reservedQuantity);
 
@@ -434,6 +513,8 @@ export interface Order {
   stockState: StockState;
   /** Unpaid online orders release their stock if payment does not arrive by this time. */
   paymentExpiresAt?: string;
+  /** If nobody confirms the order by this time the reservation is released (see expireReservations) */
+  reservationExpiresAt?: string;
   settlementId?: string;
   cancelReason?: string;
   cancelledBy?: Role;

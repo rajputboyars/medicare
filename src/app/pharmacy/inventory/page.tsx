@@ -1,43 +1,69 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Download, Minus, Pencil, Plus, Upload } from "lucide-react";
+import { AlertTriangle, Minus, Pencil, Plus, Upload } from "lucide-react";
 import clsx from "clsx";
 import type { z } from "zod";
-import { api, patch, post, put, upload } from "@/lib/api";
+import { api, patch, post, put } from "@/lib/api";
+import { ImportDialog } from "@/components/pharmacy/import-dialog";
 import { inventoryItemSchema } from "@/lib/validation";
 import { fmtAgo, fmtDate } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
-import { Button, Card, EmptyState, ErrorState, IconButton, Input, Modal, Notice, PageTitle, QueryBoundary, SearchBar, Select, SkeletonList, StatusBadge, Success } from "@/components/ui";
+import { Button, Card, EmptyState, IconButton, Input, Modal, Notice, PageTitle, QueryBoundary, SearchBar, Select, SkeletonList, StatusBadge } from "@/components/ui";
 
-interface Row { id: string; medicineId: string; name: string; brand: string; generic: string; strength: string; batch: string; expiry: string; mrp: number; sellingPrice: number; stockQuantity: number; reservedQuantity: number; availableQuantity: number; lowStockThreshold: number; low: boolean; expiringSoon: boolean; lastUpdatedAt?: string }
+interface Row { id: string; medicineId: string; name: string; brand: string; generic: string; strength: string; batch: string; expiry: string; mrp: number; sellingPrice: number; stockQuantity: number; reservedQuantity: number; availableQuantity: number; lowStockThreshold: number; low: boolean; expiringSoon: boolean; lastUpdatedAt?: string; expiryState: "EXPIRED" | "EXPIRING_30" | "EXPIRING_90" | "OK"; daysToExpiry: number; confidence: "HIGH" | "MEDIUM" | "LOW"; sellable: boolean; outOfStock: boolean; status: "ACTIVE" | "INACTIVE" }
 type Form = z.input<typeof inventoryItemSchema>;
-type Filter = "all" | "low" | "out" | "expiry";
+type Filter = "all" | "low" | "out" | "exp30" | "exp90" | "expired";
 
-const matches: Record<Filter, (r: Row) => boolean> = { all: () => true, low: (r) => r.low && r.stockQuantity > 0, out: (r) => r.stockQuantity === 0, expiry: (r) => r.expiringSoon };
-const FILTERS: [Filter, string][] = [["all", "All"], ["low", "Low stock"], ["out", "Out of stock"], ["expiry", "Expiring soon"]];
+const matches: Record<Filter, (r: Row) => boolean> = {
+  all: () => true,
+  low: (r) => r.low && r.stockQuantity > 0 && r.expiryState !== "EXPIRED",
+  out: (r) => r.availableQuantity === 0 && r.expiryState !== "EXPIRED",
+  exp30: (r) => r.expiryState === "EXPIRING_30",
+  exp90: (r) => r.expiryState === "EXPIRING_30" || r.expiryState === "EXPIRING_90",
+  expired: (r) => r.expiryState === "EXPIRED",
+};
+const FILTERS: [Filter, string][] = [["all", "All"], ["low", "Low stock"], ["out", "Out of stock"], ["exp30", "Expires in 30 days"], ["exp90", "Expires in 90 days"], ["expired", "Expired"]];
 
-/** Big − / + so the stock can be fixed in a tap. Saves immediately and shows the new number straight away. */
+/**
+ * Fix the stock in a tap (− / +) or type the exact number. Saves immediately and shows the new number straight away.
+ * It never goes below zero or below the units already promised to open orders (the server enforces this too).
+ */
 function StockStepper({ row }: { row: Row }) {
   const qc = useQueryClient();
+  const [draft, setDraft] = useState<string>();
+  const [error, setError] = useState<string>();
   const set = useMutation({
-    mutationFn: (stockQuantity: number) => patch(`/api/pharmacy/inventory/${row.id}/stock`, { stockQuantity }),
-    onMutate: async (stockQuantity) => {
+    mutationFn: (body: { stockQuantity: number } | { delta: number }) => patch(`/api/pharmacy/inventory/${row.id}/stock`, body),
+    onMutate: async (body) => {
+      setError(undefined);
       await qc.cancelQueries({ queryKey: ["inventory"] });
       const prev = qc.getQueryData<Row[]>(["inventory"]);
-      qc.setQueryData<Row[]>(["inventory"], (rows) => rows?.map((r) => (r.id === row.id ? { ...r, stockQuantity, availableQuantity: Math.max(0, stockQuantity - r.reservedQuantity), low: stockQuantity <= r.lowStockThreshold } : r)));
+      const next = "delta" in body ? row.stockQuantity + body.delta : body.stockQuantity;
+      qc.setQueryData<Row[]>(["inventory"], (rows) => rows?.map((r) => (r.id === row.id ? { ...r, stockQuantity: next, availableQuantity: Math.max(0, next - r.reservedQuantity), low: next <= r.lowStockThreshold, lastUpdatedAt: new Date().toISOString() } : r)));
       return { prev };
     },
-    onError: (_e, _q, ctx) => ctx?.prev && qc.setQueryData(["inventory"], ctx.prev),
-    onSettled: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["pharmacy-dashboard"] }); },
+    onError: (e, _q, ctx) => { if (ctx?.prev) qc.setQueryData(["inventory"], ctx.prev); setError((e as Error).message); },
+    onSettled: () => { setDraft(undefined); qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["pharmacy-dashboard"] }); },
   });
+  const commit = () => {
+    if (draft === undefined) return;
+    const n = Number(draft);
+    if (!/^\d+$/.test(draft) || !Number.isInteger(n)) { setError("Type a whole number"); setDraft(undefined); return; }
+    if (n !== row.stockQuantity) set.mutate({ stockQuantity: n }); else setDraft(undefined);
+  };
   return (
-    <div className="flex items-center gap-1" role="group" aria-label={`Stock of ${row.name}`}>
-      <IconButton label={`One less ${row.name}`} className="border border-line-strong bg-surface" disabled={row.stockQuantity <= row.reservedQuantity} onClick={() => set.mutate(row.stockQuantity - 1)}><Minus className="size-5" aria-hidden /></IconButton>
-      <output aria-live="polite" className={clsx("min-w-14 text-center text-xl font-extrabold tabular-nums", row.stockQuantity === 0 && "text-emergency", row.low && row.stockQuantity > 0 && "text-warn")}>{row.stockQuantity}</output>
-      <IconButton label={`One more ${row.name}`} className="border border-line-strong bg-surface" onClick={() => set.mutate(row.stockQuantity + 1)}><Plus className="size-5" aria-hidden /></IconButton>
+    <div>
+      <div className="flex items-center gap-1" role="group" aria-label={`Stock of ${row.name}`}>
+        <IconButton label={`One less ${row.name}`} className="border border-line-strong bg-surface" disabled={row.stockQuantity <= row.reservedQuantity} onClick={() => set.mutate({ delta: -1 })}><Minus className="size-5" aria-hidden /></IconButton>
+        <input aria-label={`Exact stock of ${row.name}`} inputMode="numeric" value={draft ?? String(row.stockQuantity)} onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setDraft(undefined); }}
+          className={clsx("h-12 w-20 rounded-control border-2 border-line bg-surface text-center text-xl font-extrabold tabular-nums", row.stockQuantity === 0 && "text-emergency", row.low && row.stockQuantity > 0 && "text-warn")} />
+        <IconButton label={`One more ${row.name}`} className="border border-line-strong bg-surface" onClick={() => set.mutate({ delta: 1 })}><Plus className="size-5" aria-hidden /></IconButton>
+      </div>
+      {error && <p role="alert" className="mt-1 max-w-56 text-sm font-semibold text-emergency">{error}</p>}
     </div>
   );
 }
@@ -72,33 +98,20 @@ function StockForm({ row, onDone }: { row?: Row; onDone: () => void }) {
 }
 
 export default function Inventory() {
-  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["inventory"], queryFn: () => api<Row[]>("/api/pharmacy/inventory") });
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Row>();
   const [text, setText] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const file = useRef<HTMLInputElement>(null);
-  const bulk = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.set("file", f); return upload<{ imported: number; errors: { row: number; error: string }[] }>("/api/pharmacy/inventory/bulk", fd); }, onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }) });
-
-  function template() {
-    const csv = "medicine,batch,expiry,mrp,sellingPrice,quantity,lowStockThreshold\nParacetamol 650,B1234,2027-06-30,33,30,100,10\n";
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "inventory-template.csv"; a.click();
-  }
+  const [importing, setImporting] = useState(false);
 
   return (
     <>
       <PageTitle title="Inventory" subtitle="Keep stock correct so customers see what you really have." action={
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setAdding(true)}><Plus className="size-5" aria-hidden /> Add stock</Button>
-          <Button variant="secondary" loading={bulk.isPending} onClick={() => file.current?.click()}><Upload className="size-5" aria-hidden /> Upload CSV</Button>
-          <Button variant="ghost" onClick={template}><Download className="size-5" aria-hidden /> CSV template</Button>
-          <input ref={file} type="file" accept=".csv,text/csv" className="hidden" aria-label="Upload inventory CSV" onChange={(e) => { const f = e.target.files?.[0]; if (f) bulk.mutate(f); e.target.value = ""; }} />
+          <Button variant="secondary" onClick={() => setImporting(true)}><Upload className="size-5" aria-hidden /> Import CSV</Button>
         </div>} />
-
-      {bulk.isSuccess && <div className="mb-4 space-y-2"><Success title={`${bulk.data.imported} rows imported`}>{bulk.data.errors.length ? `${bulk.data.errors.length} rows had problems:` : "All rows were valid."}</Success>
-        {bulk.data.errors.length > 0 && <Notice tone="amber"><ul className="list-disc pl-5">{bulk.data.errors.slice(0, 10).map((e) => <li key={e.row}>Row {e.row}: {e.error}</li>)}</ul></Notice>}</div>}
-      {bulk.isError && <div className="mb-4"><ErrorState message={(bulk.error as Error).message} /></div>}
 
       <QueryBoundary query={q} skeleton={<SkeletonList rows={5} lines={2} />} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No stock added yet" body="Add stock one by one, or upload a CSV from your billing software." action={<Button onClick={() => setAdding(true)}>Add stock</Button>} />}>
         {(rows) => {
@@ -131,8 +144,9 @@ export default function Inventory() {
                         <div className="text-right"><p className="t-number">{inr(r.sellingPrice)}</p><p className="t-caption">MRP {inr(r.mrp)}</p></div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        {r.stockQuantity === 0 ? <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Out of stock</StatusBadge> : r.low && <StatusBadge tone="warning" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Low stock</StatusBadge>}
-                        {r.expiringSoon && <StatusBadge tone="warning">Expires {fmtDate(r.expiry)}</StatusBadge>}
+                        {r.availableQuantity === 0 && r.expiryState !== "EXPIRED" ? <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Out of stock</StatusBadge> : r.low && r.expiryState !== "EXPIRED" && <StatusBadge tone="warning" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Low stock</StatusBadge>}
+                        {r.expiryState === "EXPIRED" ? <StatusBadge tone="danger" icon={<AlertTriangle className="size-3.5" aria-hidden />}>Expired · not sold</StatusBadge> : r.expiringSoon && <StatusBadge tone="warning">Expires in {r.daysToExpiry} days</StatusBadge>}
+                        {r.confidence === "LOW" && <StatusBadge tone="neutral">Count not updated for a while</StatusBadge>}
                         {r.reservedQuantity > 0 && <StatusBadge tone="info">{r.reservedQuantity} promised to orders</StatusBadge>}
                         <span className="t-caption">Batch {r.batch} · expiry {fmtDate(r.expiry)}{r.lastUpdatedAt ? ` · updated ${fmtAgo(r.lastUpdatedAt)}` : ""}</span>
                       </div>
@@ -147,7 +161,8 @@ export default function Inventory() {
 
       <Modal open={adding} onClose={() => setAdding(false)} title="Add stock">{adding && <StockForm onDone={() => setAdding(false)} />}</Modal>
       <Modal open={!!editing} onClose={() => setEditing(undefined)} title="Edit stock">{editing && <StockForm key={editing.id} row={editing} onDone={() => setEditing(undefined)} />}</Modal>
-      <p className="t-caption mt-4">Integration-ready: billing or POS software can call <code>/api/pharmacy/inventory/bulk</code> with the same CSV.</p>
+      <ImportDialog open={importing} onClose={() => setImporting(false)} />
+      <p className="t-caption mt-4">Expired stock is kept for your records but is never shown to customers or sold.</p>
     </>
   );
 }

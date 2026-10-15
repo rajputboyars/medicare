@@ -24,6 +24,8 @@ export function attentionItems(now = Date.now()): AttentionItem[] {
   if (noRider.length) items.push({ id: "no-rider", severity: "critical", title: `${noRider.length} ready order${noRider.length === 1 ? " has" : "s have"} no delivery partner`, description: "They have been ready for more than 15 minutes. Check that riders are online.", href: "/admin/riders", actionLabel: "See riders" });
   const unanswered = d.medicineRequests.filter((r) => r.status === "SEARCHING" && mins(r.createdAt) > 30 && !d.medicineRequestResponses.some((x) => x.requestId === r.id));
   if (unanswered.length) items.push({ id: "unanswered", severity: "warning", title: `${unanswered.length} medicine request${unanswered.length === 1 ? " has" : "s have"} no reply`, description: "No pharmacy has answered for over 30 minutes.", href: "/admin/requests", actionLabel: "See requests" });
+  const unmatched = d.matchReviews.filter((r) => r.status === "PENDING").length;
+  if (unmatched) items.push({ id: "unmatched-medicines", severity: "info", title: `${unmatched} medicine${unmatched === 1 ? "" : "s"} from pharmacies not in the catalogue`, description: "Match each to an existing medicine, create it, or reject it. Nothing is added automatically.", href: "/admin/medicine-matches", actionLabel: "Review" });
   const pendingPh = d.pharmacies.filter((p) => p.verification === "PENDING").length;
   if (pendingPh) items.push({ id: "pending-pharmacies", severity: "warning", title: `${pendingPh} pharmacy approval${pendingPh === 1 ? "" : "s"} waiting`, description: "Check the drug licence, then approve or reject with a reason.", href: "/admin/verification", actionLabel: "Review" });
   const pendingRid = d.deliveryPartners.filter((p) => p.verification === "PENDING").length;
@@ -46,6 +48,7 @@ export function adminStats() {
     customers: d.users.filter((u) => u.role === "CUSTOMER").length,
     activePharmacies: d.pharmacies.filter((p) => p.verification === "VERIFIED").length,
     pendingPharmacyApprovals: d.pharmacies.filter((p) => p.verification === "PENDING").length,
+    pendingMatches: d.matchReviews.filter((r) => r.status === "PENDING").length,
     ridersOnline: d.deliveryPartners.filter((p) => p.available).length,
     ridersVerified: d.deliveryPartners.filter((p) => p.verification === "VERIFIED").length,
     pendingRiderApprovals: d.deliveryPartners.filter((p) => p.verification === "PENDING").length,

@@ -27,6 +27,8 @@ const owner2 = await login("pharmacy2@example.com");
 const rider = await login("rider@example.com");
 const rider4 = await login("rider4@example.com");
 const admin = await login("admin@example.com");
+// Sensitive admin actions need a recent password confirmation
+await call(admin.cookie, "POST", "/api/auth/elevate", { password: PW });
 ok("logins", [customer, customer2, owner, pharmacist, owner2, rider, rider4, admin].every((x) => x.status === 200 && x.cookie));
 ok("bad password rejected", (await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: "9876543210", password: "wrong-pass" }) })).status === 400);
 
@@ -48,11 +50,13 @@ ok("deferred modules are not exposed (Doctor / Lab / Home care / Hospital)", rem
 // ── Location, search, finder ──
 ok("covered pincode", (await call(null, "GET", "/api/coverage?pincode=261001")).data?.available === true);
 ok("uncovered pincode says coming soon", ((await call(null, "GET", "/api/coverage?pincode=110001")).data?.message ?? "").includes("coming"));
-ok("launch signup", (await call(null, "POST", "/api/launch-signup", { mobile: "9000000077", pincode: "110001" })).data?.ok === true);
+ok("launch signup", (await call(null, "POST", "/api/launch-signup", { mobile: "9000000077", pincode: "110001" })).data?.saved === true);
 const s = await call(null, "GET", "/api/medicines/search?q=paracetamol&pincode=261001");
-ok("search finds paracetamol across pharmacies", s.data?.[0]?.pharmacyCount >= 2 && s.data[0].closest && s.data[0].fastest && s.data[0].lowest);
+ok("search finds paracetamol across pharmacies", s.data?.[0]?.availablePharmacyCount >= 2 && s.data[0].startingPrice > 0 && s.data[0].fastestETA > 0 && s.meta?.total >= 1);
+ok("search tolerates Telma-40 / telma40 / a typo", (await Promise.all(["Telma-40", "telma40", "telmisarten"].map((q) => call(null, "GET", "/api/medicines/search?pincode=261001&q=" + q)))).every((r) => r.data?.[0]?.medicine.name === "Telmisartan 40"));
+ok("autocomplete", (await call(null, "GET", "/api/medicines/suggestions?q=tel")).data?.[0]?.name === "Telmisartan 40");
 const ins = await call(null, "GET", "/api/medicines/med_20/availability?pincode=261001");
-ok("pharmacy-specific availability (insulin only at one shop)", ins.data?.offers.length === 1 && ins.data.offers[0].pharmacyId === "ph_1");
+ok("pharmacy-specific availability (insulin only at one shop)", ins.data?.offers.length === 1 && ins.data.offers[0].pharmacy.id === "ph_1" && ins.data.offers[0].inventoryConfidence);
 const fm = await call(customer2.cookie, "POST", "/api/medicine-requests", { medicineQuery: "Liv-52 syrup", mobile: "9876500002", pincode: "261001" });
 ok("Find This Medicine For Me creates a request", fm.status === 200 && fm.data?.pharmaciesNotified >= 2);
 const preq = await call(owner.cookie, "GET", "/api/pharmacy/requests");

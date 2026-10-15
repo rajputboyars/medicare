@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useCart, useLocation, usePrefs } from "@/lib/store";
 import { OfflineBanner } from "@/components/pwa/install";
 import { post } from "@/lib/api";
+import { ElevationPrompt } from "@/components/admin/elevation-prompt";
 import { useMe } from "@/lib/hooks";
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -53,7 +54,7 @@ export function Providers({ children }: { children: ReactNode }) {
     el.lang = lang;
   }, [large, contrast, controls, simple, lang]);
 
-  return <QueryClientProvider client={client}><OfflineBanner /><AccountSync />{children}</QueryClientProvider>;
+  return <QueryClientProvider client={client}><OfflineBanner /><AccountSync /><ElevationPrompt />{children}</QueryClientProvider>;
 }
 
 /**

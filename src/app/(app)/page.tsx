@@ -12,10 +12,10 @@ import { isFinal } from "@/lib/order-machine";
 import { shortStatus } from "@/lib/order-copy";
 import { LocationSelector } from "@/components/layout/location-selector";
 import { QuickActionCard } from "@/components/customer/quick-action-card";
-import { MedicineCard } from "@/components/medicine/medicine-card";
+import { SearchResultCard } from "@/components/medicine/search-result-card";
 import { OrderStatusBadge } from "@/components/order/order-status-badge";
 import { Card, EmptyState, LazyMount, LinkButton, Notice, QueryBoundary, SearchBar, SectionHeader, SkeletonList, StatusBadge, Verified } from "@/components/ui";
-import type { MedicineResult } from "@/server/features/medicines/finder.service";
+import type { SearchItem } from "@/server/features/catalog/catalog.service";
 import type { Order, SavedMedicine } from "@/lib/types";
 
 /** Home, in this order: location → search → quick actions → Find My Medicine → repeat medicines → nearby pharmacies → health essentials. */
@@ -155,11 +155,11 @@ function NearbyPharmacies({ pincode }: { pincode: string }) {
 }
 
 function HealthEssentials({ pincode }: { pincode: string }) {
-  const q = useQuery({ queryKey: ["essentials", pincode], queryFn: () => api<MedicineResult[]>(`/api/medicines/search?pincode=${pincode}&category=Health%20Essentials&rx=no`) });
+  const q = useQuery({ queryKey: ["essentials", pincode], queryFn: () => api<SearchItem[]>(`/api/medicines/search?pincode=${pincode}&category=Health%20Essentials&prescriptionRequired=false&availability=AVAILABLE&limit=2`) });
   return (
     <section aria-labelledby="ess"><SectionHeader id="ess" title="Health essentials" href="/medicines?category=Health%20Essentials" />
       <QueryBoundary query={q} skeleton={<SkeletonList rows={1} lines={4} />} isEmpty={(d) => d.length === 0} empty={<p className="t-support">Nothing in stock nearby yet.</p>}>
-        {(list) => <div className="grid gap-3 md:grid-cols-2">{list.slice(0, 2).map((r) => <MedicineCard key={r.medicine.id} r={r} strategy="cheapest" />)}</div>}
+        {(list) => <div className="grid gap-3 md:grid-cols-2">{list.slice(0, 2).map((r) => <SearchResultCard key={r.medicine.id} r={r} />)}</div>}
       </QueryBoundary>
     </section>
   );

@@ -28,6 +28,7 @@ const PUBLIC: Record<string, string> = {
   "location/resolve": "pincode or GPS to place and coverage; guests can search",
   "partner/start": "needs a signupToken from a verified mobile",
   "service-areas/interest": "leave a number for a coming-soon area; throttled",
+  "payments/webhook": "server-to-server from the payment gateway; guarded by its signature over the raw body, event-id idempotency and amount checks",
   "support/callback": "call-back request for people who find the app hard; throttled",
 };
 

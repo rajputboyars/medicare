@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, IndianRupee, MapPin, Navigation, PackageCheck, Phone, Power, Store, Truck } from "lucide-react";
 import clsx from "clsx";
@@ -8,7 +8,7 @@ import { fmtDateTime } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
 import { useRiderMe, useToggleOnline } from "@/components/delivery/rider-context";
 import { DeliveryStepper } from "@/components/delivery/delivery-stepper";
-import { Button, Card, DashboardMetricCard, EmptyState, ErrorState, Input, Notice, QueryBoundary, SectionHeader, SkeletonList, StatusBadge } from "@/components/ui";
+import { Button, Card, DashboardMetricCard, EmptyState, ErrorState, Input, Notice, QueryBoundary, SectionHeader, Select, SkeletonList, StatusBadge } from "@/components/ui";
 import type { GeoPoint, OrderStatus } from "@/lib/types";
 
 interface Available { id: string; code: string; deliveryType: string; parcelCount: number; pharmacy: { name: string; address: string }; toPharmacyKm?: number; dropKm?: number; dropArea: string; payout: number; collectCash: number; readyAt: string }
@@ -16,7 +16,10 @@ interface Active {
   id: string; code: string; status: OrderStatus; deliveryType: string; parcelCount: number; collectCash: number; payout: number; etaMinutes: number;
   pharmacy: { name: string; address: string; mobile: string; location: GeoPoint };
   customer: { name: string; mobile: string; address: string; landmark: string; location?: GeoPoint };
+  delivery?: { id: string; status: string; attemptNo: number; failureReasonCode?: string };
 }
+
+const FAIL_REASONS: [string, string][] = [["CUSTOMER_UNAVAILABLE", "Customer is not at home"], ["UNABLE_TO_CONTACT", "Cannot reach the customer"], ["WRONG_ADDRESS", "Wrong address"], ["CUSTOMER_REFUSED", "Customer refused the parcel"], ["UNSAFE_LOCATION", "Unsafe place"], ["RIDER_ISSUE", "Problem with my vehicle or phone"], ["OTHER", "Something else"]];
 
 const maps = (p?: GeoPoint) => (p ? `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}` : undefined);
 const refreshAll = (qc: ReturnType<typeof useQueryClient>) => ["rider-available", "rider-active", "rider-me", "rider-history", "rider-earnings"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -47,10 +50,24 @@ function CurrentDelivery({ o }: { o: Active }) {
   const qc = useQueryClient();
   const [otp, setOtp] = useState("");
   const [atPharmacy, setAtPharmacy] = useState(false);
+  const [cashTaken, setCashTaken] = useState(false);
+  const [failing, setFailing] = useState(false);
+  const [failReason, setFailReason] = useState("CUSTOMER_UNAVAILABLE");
+  const [failNote, setFailNote] = useState("");
   const act = useMutation({
-    mutationFn: (b: { action: string; otp?: string }) => post(`/api/delivery/orders/${o.id}`, b),
-    onSuccess: () => { setOtp(""); refreshAll(qc); },
+    mutationFn: (b: { action: string; otp?: string; cashCollected?: number; reasonCode?: string; note?: string }) => post(`/api/delivery/orders/${o.id}`, b),
+    onSuccess: () => { setOtp(""); setFailing(false); refreshAll(qc); },
   });
+  // Share the latest position every half minute while carrying the parcel (only the latest point is kept on the server)
+  const carrying = o.status === "PICKED_UP" || o.status === "OUT_FOR_DELIVERY";
+  useEffect(() => {
+    if (!carrying || !("geolocation" in navigator)) return;
+    const send = () => navigator.geolocation.getCurrentPosition((p) => { void post(`/api/rider/deliveries/${o.id}/location`, { lat: p.coords.latitude, lng: p.coords.longitude }).catch(() => undefined); }, () => undefined, { maximumAge: 20_000, timeout: 8_000 });
+    send();
+    const t = setInterval(send, 30_000);
+    return () => clearInterval(t);
+  }, [carrying, o.id]);
+  const dstatus = o.delivery?.status;
   const step = o.status === "RIDER_ASSIGNED" ? (atPharmacy ? 1 : 0) : o.status === "PICKED_UP" ? 2 : 3;
   const otpField = (label: string) => <Input label={label} inputMode="numeric" maxLength={4} autoComplete="one-time-code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} />;
 
@@ -62,7 +79,12 @@ function CurrentDelivery({ o }: { o: Active }) {
       </div>
       <DeliveryStepper current={step} />
 
-      {step < 2 ? (
+      {dstatus === "DELIVERY_FAILED" ? (
+        <Notice tone="amber" title="Delivery marked as failed">Please wait. The DawaDost team will tell you whether to try again or bring the parcel back to the pharmacy. Keep the parcel safe.</Notice>
+      ) : dstatus === "RETURNING_TO_PHARMACY" ? (
+        <Notice tone="amber" title="Bring the parcel back to the pharmacy">Take it to {o.pharmacy.name}. They will confirm when it arrives.
+          <div className="mt-2"><a href={maps(o.pharmacy.location)} target="_blank" rel="noreferrer" className={primaryLink}><Navigation className="size-5" aria-hidden /> Navigate to the pharmacy</a></div></Notice>
+      ) : step < 2 ? (
         <section aria-label="Pharmacy pickup" className="space-y-3 rounded-card bg-surface-2 p-4">
           <p className="t-card flex items-center gap-2"><Store className="size-5 text-brand-600" aria-hidden /> {o.pharmacy.name}</p>
           <p className="t-support">{o.pharmacy.address}</p>
@@ -87,11 +109,19 @@ function CurrentDelivery({ o }: { o: Active }) {
             <a href={`tel:${o.customer.mobile}`} className={linkBtn}><Phone className="size-5" aria-hidden /> Call</a>
             {maps(o.customer.location) ? <a href={maps(o.customer.location)} target="_blank" rel="noreferrer" className={primaryLink}><Navigation className="size-5" aria-hidden /> Navigate</a> : <span className="t-caption grid place-items-center">No map pin. Use the landmark.</span>}
           </div>
-          {o.collectCash > 0 && <Notice tone="amber" title={`Collect cash ${inr(o.collectCash)}`}>Cash on delivery. Collect the exact amount.</Notice>}
+          {o.collectCash > 0 && <Notice tone="amber" title={`Collect cash ${inr(o.collectCash)}`}>Cash on delivery. Collect the exact amount.
+            {step === 3 && <label className="tap mt-2 flex items-center gap-3 font-bold"><input type="checkbox" className="size-5" checked={cashTaken} onChange={(e) => setCashTaken(e.target.checked)} /> I collected {inr(o.collectCash)} in cash</label>}</Notice>}
           {step === 2 ? <Button size="lg" className="w-full" loading={act.isPending} onClick={() => act.mutate({ action: "start" })}><Truck className="size-5" aria-hidden /> I am on my way</Button> : (
             <div className="space-y-2">
               {otpField("Delivery code from the customer")}
-              <Button size="lg" className="w-full" disabled={otp.length !== 4} loading={act.isPending} onClick={() => act.mutate({ action: "deliver", otp })}><CheckCircle2 className="size-5" aria-hidden /> Complete delivery</Button>
+              <Button size="lg" className="w-full" disabled={otp.length !== 4 || (o.collectCash > 0 && !cashTaken)} loading={act.isPending} onClick={() => act.mutate({ action: "deliver", otp, cashCollected: o.collectCash > 0 ? o.collectCash : undefined })}><CheckCircle2 className="size-5" aria-hidden /> Complete delivery</Button>
+              {!failing ? <Button variant="ghost" className="w-full" onClick={() => setFailing(true)}>I could not deliver</Button> : (
+                <div className="space-y-2 rounded-card border-2 border-line p-3">
+                  <Select label="What happened?" value={failReason} onChange={(e) => setFailReason(e.target.value)}>{FAIL_REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+                  <Input label="Details (needed for Something else)" value={failNote} onChange={(e) => setFailNote(e.target.value)} />
+                  <Button variant="danger-outline" className="w-full" disabled={failReason === "OTHER" && failNote.trim().length < 3} loading={act.isPending} onClick={() => act.mutate({ action: "failed", reasonCode: failReason, note: failNote.trim() || undefined })}>Report failed delivery</Button>
+                </div>
+              )}
             </div>
           )}
         </section>

@@ -1,4 +1,4 @@
-import type { PlatformSettings, ServiceArea, ServiceAreaStatus, SessionUser, Settlement, VerificationStatus } from "@/lib/types";
+import type { PlatformSettings, ServiceArea, ServiceAreaStatus, SessionUser, VerificationStatus } from "@/lib/types";
 import { isFinal } from "@/lib/order-machine";
 import { badRequest, notFound } from "@/server/errors";
 import { audit, db, settings, uid } from "@/server/store";
@@ -32,6 +32,10 @@ export function attentionItems(now = Date.now()): AttentionItem[] {
   if (pendingRid) items.push({ id: "pending-riders", severity: "info", title: `${pendingRid} delivery partner${pendingRid === 1 ? "" : "s"} waiting for approval`, description: "They cannot take deliveries until approved.", href: "/admin/verification", actionLabel: "Review" });
   const tickets = d.tickets.filter((t) => t.status !== "RESOLVED");
   if (tickets.length) items.push({ id: "complaints", severity: tickets.some((t) => mins(t.createdAt) > 24 * 60) ? "critical" : "warning", title: `${tickets.length} open complaint${tickets.length === 1 ? "" : "s"}`, description: "Customers are waiting for an answer.", href: "/admin/complaints", actionLabel: "Open" });
+  const failedDeliveries = d.deliveries.filter((x) => x.status === "DELIVERY_FAILED" || x.status === "RETURNED_TO_PHARMACY").length;
+  if (failedDeliveries) items.push({ id: "failed-deliveries", severity: "critical", title: `${failedDeliveries} delivery problem${failedDeliveries === 1 ? "" : "s"}`, description: "A parcel could not be delivered or is back at the pharmacy. Choose to try again, bring it back, or cancel and refund.", href: "/admin/delivery-issues", actionLabel: "Open" });
+  const failedRefunds = d.refunds.filter((r) => r.status === "FAILED").length;
+  if (failedRefunds) items.push({ id: "failed-refunds", severity: "critical", title: `${failedRefunds} refund${failedRefunds === 1 ? "" : "s"} did not go through`, description: "The customer is waiting for their money. Try the refund again.", href: "/admin/delivery-issues", actionLabel: "Open" });
   const unsettled = d.orders.filter((o) => o.status === "DELIVERED" && !o.settlementId).length;
   if (unsettled) items.push({ id: "unsettled", severity: "info", title: `${unsettled} delivered order${unsettled === 1 ? "" : "s"} not settled yet`, description: "Create settlements to pay the pharmacies.", href: "/admin/settlements", actionLabel: "Settle" });
   const rank = { critical: 0, warning: 1, info: 2 };
@@ -135,8 +139,8 @@ export const launchSignup = (mobile: string, pincode: string) => registerInteres
 
 // ───────────── Lists for the admin tables ─────────────
 
-export type AdminEntity = "customers" | "orders" | "requests" | "payments" | "settlements" | "complaints" | "audit";
-export const ADMIN_ENTITIES: readonly AdminEntity[] = ["customers", "orders", "requests", "payments", "settlements", "complaints", "audit"];
+export type AdminEntity = "customers" | "orders" | "requests" | "payments" | "settlements" | "complaints" | "audit" | "issues";
+export const ADMIN_ENTITIES: readonly AdminEntity[] = ["customers", "orders", "requests", "payments", "settlements", "complaints", "audit", "issues"];
 
 export function adminList(entity: AdminEntity) {
   const d = db();
@@ -163,42 +167,24 @@ export function adminList(entity: AdminEntity) {
       return d.tickets.map((t) => ({ ...t, customer: d.users.find((u) => u.id === t.userId)?.name ?? "Guest", orderCode: d.orders.find((o) => o.id === t.orderId)?.code }));
     case "audit":
       return d.audit.slice(0, 300);
+    case "issues": {
+      // Things support must act on: deliveries that failed or came back, and refunds that did not go through
+      const deliveries = d.deliveries
+        .filter((x) => ["DELIVERY_FAILED", "RETURNING_TO_PHARMACY", "RETURNED_TO_PHARMACY"].includes(x.status) && d.orders.find((o) => o.id === x.orderId)?.status === "OUT_FOR_DELIVERY")
+        .map((x) => {
+          const o = d.orders.find((y) => y.id === x.orderId)!;
+          return { id: x.id, kind: "DELIVERY", orderId: o.id, orderCode: o.code, status: x.status, detail: x.failureReasonCode ?? "", attemptNo: x.attemptNo ?? 1, pharmacy: d.pharmacies.find((p) => p.id === o.pharmacyId)?.name, rider: d.deliveryPartners.find((p) => p.id === x.partnerId)?.name, paymentMethod: o.paymentMethod, paymentStatus: o.paymentStatus, total: o.total, createdAt: x.failedAt ?? x.createdAt };
+        });
+      const refunds = d.refunds.filter((r) => r.status === "FAILED").map((r) => ({ id: r.id, kind: "REFUND", orderId: r.orderId, orderCode: d.orders.find((o) => o.id === r.orderId)?.code, status: r.status, detail: r.failureMessage ?? "", paymentId: r.paymentId, refundKey: r.idempotencyKey, total: r.amount, createdAt: r.updatedAt }));
+      return [...deliveries, ...refunds];
+    }
   }
 }
 
 // ───────────── Settlements ─────────────
 
-/** Creates one PENDING settlement per pharmacy for delivered orders that are not settled yet. */
-export function generateSettlements(actor: SessionUser): Settlement[] {
-  const d = db();
-  const pct = settings().commissionPercent;
-  const created: Settlement[] = [];
-  for (const p of d.pharmacies) {
-    const due = d.orders.filter((o) => o.pharmacyId === p.id && o.status === "DELIVERED" && !o.settlementId);
-    if (!due.length) continue;
-    const gross = due.reduce((s, o) => s + o.subtotal - o.discount, 0); // delivery fees belong to the platform / riders
-    const commission = Math.round((gross * pct) / 100);
-    const s: Settlement = {
-      id: uid("set"), partnerType: "PHARMACY", partnerId: p.id, periodStart: due.map((o) => o.createdAt).sort()[0], periodEnd: new Date().toISOString(),
-      orderCount: due.length, gross, commission, net: gross - commission, status: "PENDING", createdAt: new Date().toISOString(),
-    };
-    d.settlements.push(s);
-    for (const o of due) o.settlementId = s.id;
-    created.push(s);
-  }
-  audit(actor, "SETTLEMENTS_GENERATED", "Settlement", "*", { count: created.length });
-  return created;
-}
-
-export function setSettlementStatus(actor: SessionUser, id: string, status: Settlement["status"]) {
-  const s = db().settlements.find((x) => x.id === id);
-  if (!s) throw notFound();
-  const order = ["PENDING", "PROCESSING", "PAID"];
-  if (order.indexOf(status) < order.indexOf(s.status)) throw badRequest("A settlement cannot move backwards");
-  s.status = status;
-  audit(actor, "SETTLEMENT_STATUS", "Settlement", id, { status });
-  return s;
-}
+// Settlement logic lives in features/settlements; re-exported so admin callers keep one import.
+export { generateSettlements, setSettlementStatus, adjustSettlement } from "@/server/features/settlements/settlements.service";
 
 // ───────────── Complaints ─────────────
 

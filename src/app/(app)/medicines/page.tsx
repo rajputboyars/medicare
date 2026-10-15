@@ -1,118 +1,128 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { Check, SlidersHorizontal } from "lucide-react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { Check, SearchCheck, SpellCheck, Type } from "lucide-react";
 import clsx from "clsx";
-import { api } from "@/lib/api";
+import { ApiClientError } from "@/lib/api";
 import { useLocation } from "@/lib/store";
-import { MedicineCard, pickOffer } from "@/components/medicine/medicine-card";
-import { SortChips, type Strategy } from "@/components/medicine/sort-chips";
-import { Button, EmptyState, Input, LinkButton, Modal, PageTitle, QueryBoundary, SearchBar, Select, SkeletonList } from "@/components/ui";
-import type { MedicineResult } from "@/server/features/medicines/finder.service";
+import { trackEvent } from "@/lib/analytics-client";
+import { useRecentSearches } from "@/lib/search-history";
+import { SearchBox } from "@/components/medicine/search-box";
+import { SearchResultCard } from "@/components/medicine/search-result-card";
+import { Button, Card, ErrorState, LinkButton, PageTitle, SkeletonList } from "@/components/ui";
+import type { SearchItem } from "@/server/features/catalog/catalog.service";
 
-function useDebounced<T>(v: T, ms = 300) {
-  const [d, setD] = useState(v);
-  useEffect(() => { const id = setTimeout(() => setD(v), ms); return () => clearTimeout(id); }, [v, ms]);
-  return d;
+interface Page { data: SearchItem[]; meta: { page: number; total: number; hasNext: boolean } }
+
+async function fetchPage(qs: string): Promise<Page> {
+  const res = await fetch(`/api/medicines/search?${qs}`, { credentials: "same-origin" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiClientError(body.message ?? "Something went wrong", res.status);
+  return { data: body.data, meta: body.meta };
 }
 
-/** Available medicines first; within them, the best offer by the chosen sort (time, price or distance). */
-function sortBy(list: MedicineResult[], strategy: Strategy, preferredId?: string) {
-  const key = (r: MedicineResult) => {
-    const o = pickOffer(r.offers, strategy, preferredId);
-    if (!o) return Number.POSITIVE_INFINITY;
-    return strategy === "cheapest" ? o.sellingPrice : strategy === "nearest" ? o.distanceKm : o.etaMinutes;
-  };
-  return [...list].sort((a, b) => Number(b.available) - Number(a.available) || key(a) - key(b));
-}
+const SORTS = [["RELEVANCE", "Best match"], ["PRICE", "Lowest price"], ["ETA", "Fastest"]] as const;
+const RX = [["", "Any"], ["false", "No prescription"], ["true", "Prescription"]] as const;
 
 function MedicineSearch() {
   const router = useRouter();
   const sp = useSearchParams();
   const pincode = useLocation((s) => s.pincode);
+  const recent = useRecentSearches();
+  const [text, setText] = useState(sp.get("q") ?? "");
   const [q, setQ] = useState(sp.get("q") ?? "");
-  const [category, setCategory] = useState(sp.get("category") ?? "");
   const [rx, setRx] = useState(sp.get("rx") ?? "");
-  const [brand, setBrand] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [available, setAvailable] = useState(false);
-  const [strategy, setStrategy] = useState<Strategy>("fastest");
-  const [preferred, setPreferred] = useState("");
-  const [filters, setFilters] = useState(false);
-  const dq = useDebounced(q);
+  const [available, setAvailable] = useState(sp.get("available") === "1");
+  const [sort, setSort] = useState(sp.get("sort") ?? "RELEVANCE");
+  const category = sp.get("category") ?? "";
 
+  // The address bar always reflects the search, so a result can be shared or revisited
   useEffect(() => {
     const p = new URLSearchParams();
-    if (dq) p.set("q", dq);
-    if (category) p.set("category", category);
+    if (q) p.set("q", q);
     if (rx) p.set("rx", rx);
+    if (available) p.set("available", "1");
+    if (sort !== "RELEVANCE") p.set("sort", sort);
+    if (category) p.set("category", category);
     router.replace(`/medicines${p.size ? `?${p}` : ""}`, { scroll: false });
-  }, [dq, category, rx, router]);
+  }, [q, rx, available, sort, category, router]);
 
-  const meta = useQuery({ queryKey: ["meta"], queryFn: () => api<{ categories: string[]; brands: string[] }>("/api/medicines/meta"), staleTime: 10 * 60_000 });
-  const pharmacies = useQuery({ queryKey: ["pharmacies", pincode], queryFn: () => api<{ id: string; name: string }[]>(`/api/pharmacies/nearby?pincode=${pincode}`) });
+  const base = new URLSearchParams({ pincode, limit: "12", sort });
+  if (q) base.set("q", q);
+  if (rx) base.set("prescriptionRequired", rx);
+  if (available) base.set("availability", "AVAILABLE");
+  if (category) base.set("category", category);
+  const results = useInfiniteQuery({
+    queryKey: ["catalog-search", base.toString()], initialPageParam: 1,
+    queryFn: ({ pageParam }) => fetchPage(`${base}&page=${pageParam}`),
+    getNextPageParam: (last) => (last.meta.hasNext ? last.meta.page + 1 : undefined),
+    placeholderData: (prev) => prev,
+  });
+  const items = results.data?.pages.flatMap((p) => p.data) ?? [];
+  const total = results.data?.pages[0]?.meta.total ?? 0;
 
-  const params = new URLSearchParams({ pincode });
-  if (dq) params.set("q", dq);
-  if (category) params.set("category", category);
-  if (rx) params.set("rx", rx);
-  if (brand) params.set("brand", brand);
-  if (maxPrice) params.set("maxPrice", maxPrice);
-  if (available) params.set("availableNearby", "1");
-  const results = useQuery({ queryKey: ["search", params.toString()], queryFn: () => api<MedicineResult[]>(`/api/medicines/search?${params}`), placeholderData: (prev) => prev });
-
-  const activeFilters = [category, rx, brand, maxPrice, preferred].filter(Boolean).length;
-  const effective: Strategy = preferred ? "preferred" : strategy;
-  const reset = () => { setCategory(""); setRx(""); setBrand(""); setMaxPrice(""); setPreferred(""); };
+  function submit(v: string) { setQ(v); if (v) recent.remember(v); }
 
   return (
     <>
-      <PageTitle title="Medicines" subtitle="Search by medicine, generic name, brand or health need." />
+      <PageTitle title="Medicines" subtitle="Find a medicine and see which verified pharmacies near you have it." />
 
-      {/* Sticky: the search box and the choices stay in reach while scrolling results */}
+      {/* Sticky: the search box and the filters stay in reach while scrolling the results */}
       <div className="sticky top-[4.1rem] z-20 -mx-3 mb-4 space-y-3 border-b border-line bg-canvas/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-6 sm:px-6">
-        <SearchBar value={q} onChange={setQ} placeholder="e.g. Paracetamol, Metformin, thyroid" label="Search medicines" />
+        <SearchBox value={text} onChange={setText} onSubmit={submit} />
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" role="switch" aria-checked={available} onClick={() => setAvailable((a) => !a)}
             className={clsx("tap inline-flex items-center gap-1.5 rounded-pill border-2 px-4 text-sm", available ? "border-ok bg-ok-50 font-bold text-ok" : "border-line-strong bg-surface font-semibold")}>
-            {available && <Check className="size-4" aria-hidden />} Available
+            {available && <Check className="size-4" aria-hidden />} Available nearby
           </button>
-          <SortChips value={strategy} onChange={(s) => { setStrategy(s); setPreferred(""); }} />
-          <Button variant={activeFilters ? "soft" : "secondary"} size="sm" className="min-h-11" onClick={() => setFilters(true)}>
-            <SlidersHorizontal className="size-4" aria-hidden /> More filters{activeFilters ? ` (${activeFilters})` : ""}
-          </Button>
+          <div role="radiogroup" aria-label="Prescription" className="flex gap-1.5">
+            {RX.map(([v, l]) => <button key={l} type="button" role="radio" aria-checked={rx === v} onClick={() => setRx(v)} className={clsx("tap rounded-pill border-2 px-3 text-sm", rx === v ? "border-brand-600 bg-brand-50 font-bold" : "border-line-strong bg-surface font-semibold")}>{l}</button>)}
+          </div>
+          <label className="ml-auto flex items-center gap-2 text-sm font-semibold">Sort
+            <select value={sort} onChange={(e) => setSort(e.target.value)} className="tap rounded-control border-2 border-line-strong bg-surface px-2">{SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          </label>
         </div>
       </div>
 
       <div aria-live="polite" className="space-y-3">
-        <QueryBoundary query={results} skeleton={<SkeletonList rows={4} lines={4} />} isEmpty={(d) => d.length === 0}
-          empty={<EmptyState title="No medicine found" body="Check the spelling, or let us ask nearby pharmacies to find it for you." action={<LinkButton href={`/find-medicine${q ? `?q=${encodeURIComponent(q)}` : ""}`}>Find My Medicine</LinkButton>} />}>
-          {(list) => (
-            <>
-              <p className="t-caption">{list.length} {list.length === 1 ? "result" : "results"} for pincode {pincode}. Showing {effective === "cheapest" ? "lowest price" : effective === "nearest" ? "nearest pharmacy" : effective === "preferred" ? "your pharmacy" : "fastest delivery"} first.</p>
-              <div className="grid gap-3 md:grid-cols-2">
-                {sortBy(list, effective, preferred || undefined).map((r) => <MedicineCard key={r.medicine.id} r={r} strategy={effective} preferredId={preferred || undefined} />)}
-              </div>
-            </>
-          )}
-        </QueryBoundary>
+        {results.isPending ? <SkeletonList rows={4} lines={3} /> : results.isError ? (
+          <ErrorState message={(results.error as Error).message} onRetry={() => void results.refetch()} />
+        ) : items.length === 0 ? (
+          <NoResult q={q} />
+        ) : (
+          <>
+            <p className="t-caption">{total} {total === 1 ? "medicine" : "medicines"}{q ? ` for “${q}”` : ""} · pincode {pincode}</p>
+            <div className="grid gap-3 md:grid-cols-2">{items.map((r) => <SearchResultCard key={r.medicine.id} r={r} />)}</div>
+            {results.hasNextPage && <Button variant="secondary" className="w-full" loading={results.isFetchingNextPage} onClick={() => void results.fetchNextPage()}>Show more</Button>}
+          </>
+        )}
       </div>
-
-      <Modal open={filters} onClose={() => setFilters(false)} title="More filters"
-        footer={<><Button variant="ghost" onClick={reset} disabled={!activeFilters}>Clear all</Button><Button onClick={() => setFilters(false)}>Show results</Button></>}>
-        <div className="space-y-4">
-          <Select label="What is it for?" value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All</option>{meta.data?.categories.map((c) => <option key={c}>{c}</option>)}</Select>
-          <Select label="Prescription" value={rx} onChange={(e) => setRx(e.target.value)}><option value="">Any</option><option value="no">No prescription needed</option><option value="yes">Prescription needed</option></Select>
-          <Select label="Brand" value={brand} onChange={(e) => setBrand(e.target.value)}><option value="">All brands</option>{meta.data?.brands.map((c) => <option key={c}>{c}</option>)}</Select>
-          <Input label="Highest price (₹)" inputMode="numeric" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value.replace(/\D/g, ""))} />
-          <Select label="Only from my pharmacy" value={preferred} onChange={(e) => setPreferred(e.target.value)}><option value="">Any nearby pharmacy</option>{pharmacies.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
-        </div>
-      </Modal>
     </>
   );
 }
 
+/** Nothing matched: three simple ways forward, the last one starts the existing "Find My Medicine" request. */
+function NoResult({ q }: { q: string }) {
+  return (
+    <Card className="space-y-4 text-center">
+      <SearchCheck className="mx-auto size-10 text-muted" aria-hidden />
+      <div>
+        <h2 className="t-section">We couldn&apos;t find this medicine.</h2>
+        <p className="t-support">Try one of these.</p>
+      </div>
+      <ul className="mx-auto grid max-w-md gap-2 text-left">
+        <li className="flex items-start gap-3 rounded-control bg-surface-2 p-3"><SpellCheck className="mt-0.5 size-5 shrink-0 text-brand-600" aria-hidden /><span><b>Check the spelling.</b> A few letters off is fine, but try the name on the strip.</span></li>
+        <li className="flex items-start gap-3 rounded-control bg-surface-2 p-3"><Type className="mt-0.5 size-5 shrink-0 text-brand-600" aria-hidden /><span><b>Search the generic name.</b> For example “paracetamol” instead of a brand.</span></li>
+      </ul>
+      <LinkButton href={`/find-medicine${q ? `?q=${encodeURIComponent(q)}` : ""}`} size="lg" className="mx-auto" onClick={() => trackEvent("find_medicine_clicked", { from: "no_result" })}>
+        <SearchCheck className="size-5" aria-hidden /> Find This Medicine For Me
+      </LinkButton>
+      <p className="t-caption">We ask verified pharmacies near you and tell you who has it.</p>
+    </Card>
+  );
+}
+
 export default function MedicinesPage() {
-  return <Suspense fallback={<SkeletonList rows={4} lines={4} />}><MedicineSearch /></Suspense>;
+  return <Suspense fallback={<SkeletonList rows={4} lines={3} />}><MedicineSearch /></Suspense>;
 }

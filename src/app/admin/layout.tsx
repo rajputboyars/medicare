@@ -1,6 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
-import { Bike, ClipboardList, Coins, CreditCard, LayoutDashboard, LifeBuoy, LineChart, MapPinned, Search, Settings, Store, Users } from "lucide-react";
+import { BarChart3, Bike, ClipboardList, Coins, CreditCard, LayoutDashboard, LifeBuoy, LineChart, MapPinned, PackageSearch, Search, Settings, Store, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { PortalShell } from "@/components/layout/portal-shell";
 import type { NavItem } from "@/components/layout/nav";
@@ -8,7 +8,7 @@ import type { NavItem } from "@/components/layout/nav";
 export interface AttentionItem { id: string; severity: "info" | "warning" | "critical"; title: string; description: string; href: string; actionLabel: string }
 export interface AdminStats {
   ordersToday: number; gmv: number; customers: number; activePharmacies: number; ridersOnline: number; ridersVerified: number; liveOrders: number; openRequests: number; openTickets: number;
-  pendingApprovals: number; pendingPharmacyApprovals: number; pendingRiderApprovals: number; pendingSettlements: number; deliveries: number; cancelledOrders: number; attention: AttentionItem[];
+  pendingApprovals: number; pendingMatches: number; pendingPharmacyApprovals: number; pendingRiderApprovals: number; pendingSettlements: number; deliveries: number; cancelledOrders: number; attention: AttentionItem[];
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -21,6 +21,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: "/admin/orders", label: "Orders", icon: ClipboardList },
     { href: "/admin/requests", label: "Medicine Requests", icon: Search, badge: s?.openRequests },
     { href: "/admin/riders", label: "Delivery Partners", icon: Bike, badge: s?.pendingRiderApprovals },
+    { href: "/admin/medicine-matches", label: "Medicine Matches", icon: PackageSearch, badge: s?.pendingMatches },
+    { href: "/admin/catalog-insights", label: "Search Insights", icon: BarChart3 },
     { href: "/admin/service-areas", label: "Service Areas", icon: MapPinned },
     { href: "/admin/payments", label: "Payments", icon: CreditCard },
     { href: "/admin/settlements", label: "Settlements", icon: Coins },

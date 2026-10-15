@@ -72,8 +72,8 @@ export const FIELDS: Record<"PHARMACY" | "RIDER", Record<string, FieldDef[]>> = 
     serviceArea: [{ key: "servicePincodes", label: "Pincodes you can deliver in", type: "pincodes", hint: "Type a pincode and press Add" }],
     vehicle: [
       { key: "vehicleType", label: "Your vehicle", type: "select", options: [{ value: "BICYCLE", label: "Bicycle" }, { value: "SCOOTER", label: "Scooter" }, { value: "MOTORCYCLE", label: "Motorcycle" }] },
-      { key: "vehicleNumber", label: "Vehicle number", when: (v) => v.vehicleType && v.vehicleType !== "BICYCLE", half: true },
-      { key: "licenseNumber", label: "Driving licence number", when: (v) => v.vehicleType && v.vehicleType !== "BICYCLE", half: true },
+      { key: "vehicleNumber", label: "Vehicle number", when: (v) => !!v.vehicleType && v.vehicleType !== "BICYCLE", half: true },
+      { key: "licenseNumber", label: "Driving licence number", when: (v) => !!v.vehicleType && v.vehicleType !== "BICYCLE", half: true },
     ],
     payment: [
       { key: "method", label: "How should we pay you?", type: "select", options: [{ value: "UPI", label: "UPI" }, { value: "BANK", label: "Bank account" }] },

@@ -6,8 +6,15 @@ export class ApiClientError extends Error {
   }
 }
 
+/**
+ * Sensitive admin actions answer 403 ELEVATION_REQUIRED until the admin re-confirms their password. A screen registers ONE
+ * handler (see ElevationPrompt) that asks for it; `api()` then retries the request once, so no admin page needs special code.
+ */
+let askToElevate: (() => Promise<boolean>) | undefined;
+export const setElevationHandler = (fn: (() => Promise<boolean>) | undefined) => { askToElevate = fn; };
+
 /** Thin fetch wrapper: JSON in/out, friendly errors, `{data}` envelope unwrapped. */
-export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+export async function api<T>(path: string, init?: RequestInit & { json?: unknown }, retried = false): Promise<T> {
   const { json, ...rest } = init ?? {};
   let res: Response;
   try {
@@ -24,7 +31,9 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   if (!res.ok) {
     const items: { field?: string; message: string }[] = body.errors ?? [];
     const fields = Object.fromEntries(items.filter((e) => e.field).map((e) => [e.field as string, e.message]));
-    throw new ApiClientError(body.message ?? "Something went wrong", res.status, Object.keys(fields).length ? fields : undefined, body.errors?.[0]?.code);
+    const code: string | undefined = body.errors?.[0]?.code;
+    if (code === "ELEVATION_REQUIRED" && !retried && askToElevate && (await askToElevate())) return api<T>(path, init, true);
+    throw new ApiClientError(body.message ?? "Something went wrong", res.status, Object.keys(fields).length ? fields : undefined, code);
   }
   return body.data as T;
 }

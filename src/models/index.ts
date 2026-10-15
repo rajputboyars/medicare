@@ -47,6 +47,7 @@ export const User = define("User", {
   partnerId: S,
   language: { type: S, default: "en" }, // validated against the language registry in src/i18n
   pincode: S, district: S,
+  favoritePharmacyIds: [S],
   preferences: new Schema({ largeText: Boolean, largeControls: Boolean, simplified: Boolean, highContrast: Boolean }, { _id: false }),
   consent: new Schema({ healthData: Boolean, marketing: Boolean, acceptedAt: Date }, { _id: false }),
   status: { type: S, enum: ["ACTIVE", "SUSPENDED"], default: "ACTIVE" },
@@ -84,14 +85,25 @@ export const Address = define("Address", {
 }, (s) => { s.index({ userId: 1 }); s.index({ pincode: 1 }); });
 
 export const Medicine = define("Medicine", {
-  name: { type: S, required: true }, generic: S, brand: S, strength: S, form: S, packSize: S, category: S,
+  name: { type: S, required: true, trim: true }, normalizedName: { type: S, required: true },
+  genericName: { type: S, required: true, trim: true }, normalizedGenericName: { type: S, required: true },
+  brand: S, manufacturer: S, strength: S, dosageForm: S, packSize: S, category: S,
   mrp: { type: Number, required: true, min: 0 },
   prescriptionRequired: { type: Boolean, default: false },
   restricted: { type: Boolean, default: false },
+  searchAliases: [S], searchKeywords: [S], image: S, description: S,
+  status: { type: S, enum: ["ACTIVE", "INACTIVE"], default: "ACTIVE" },
+  createdAt: { type: Date, default: Date.now }, updatedAt: { type: Date, default: Date.now },
 }, (s) => {
-  s.index({ name: "text", generic: "text", brand: "text", category: "text" }, { weights: { name: 10, brand: 6, generic: 5, category: 1 } });
-  s.index({ name: 1 }); s.index({ generic: 1 }); s.index({ brand: 1 }); s.index({ category: 1 });
-  s.index({ prescriptionRequired: 1 });
+  // V1 search runs on these. A dedicated engine (Atlas Search / Typesense) would index the same normalised fields.
+  s.index({ normalizedName: "text", normalizedGenericName: "text", brand: "text", searchAliases: "text", searchKeywords: "text" },
+    { weights: { normalizedName: 10, searchAliases: 8, brand: 6, normalizedGenericName: 5, searchKeywords: 2 }, name: "medicine_text" });
+  s.index({ normalizedName: 1 });                       // exact and prefix lookups, autocomplete
+  s.index({ normalizedGenericName: 1 });                // generic-name search
+  s.index({ searchKeywords: 1 });                       // keyword lookups (multikey)
+  s.index({ status: 1, category: 1 });
+  s.index({ status: 1, prescriptionRequired: 1 });
+  s.index({ normalizedName: 1, strength: 1, dosageForm: 1, manufacturer: 1 }); // duplicate detection
 });
 
 export const Pharmacy = define("Pharmacy", {
@@ -122,11 +134,14 @@ export const PharmacyInventory = define("PharmacyInventory", {
   reservedQuantity: { type: Number, min: 0, default: 0 },
   lowStockThreshold: { type: Number, default: 10 },
   lastUpdatedAt: { type: Date, default: Date.now },
+  status: { type: S, enum: ["ACTIVE", "INACTIVE"], default: "ACTIVE" }, updatedBy: S, createdAt: Date, updatedAt: Date,
 }, (s) => {
   s.index({ pharmacyId: 1, medicineId: 1, batch: 1 }, { unique: true });
   s.index({ medicineId: 1, stockQuantity: 1, pharmacyId: 1 }); // "which pharmacies have this medicine?"
   s.index({ pharmacyId: 1, stockQuantity: 1 });                 // low-stock alerts
   s.index({ expiry: 1 });
+  s.index({ pharmacyId: 1, status: 1, expiry: 1 });        // expiring-soon / expired filters
+  s.index({ medicineId: 1, status: 1, expiry: 1, stockQuantity: 1 }); // availability for one medicine
 });
 
 export const Prescription = define("Prescription", {
@@ -172,7 +187,7 @@ export const Order = define("Order", {
   paymentMethod: payMethod, paymentStatus: payStatus, etaMinutes: Number,
   stockAllocations: [new Schema({ inventoryId: S, quantity: Number }, { _id: false })],
   stockState: { type: S, enum: ["NONE", "RESERVED", "CONSUMED", "RELEASED"], default: "NONE" },
-  paymentExpiresAt: Date,
+  paymentExpiresAt: Date, reservationExpiresAt: Date,
   assisted: new Schema({ pharmacyId: S, staffUserId: S, consentId: S }, { _id: false }),
   deliveryPartnerId: S, settlementId: S, cancelReason: S, cancelledBy: S, isRepeat: Boolean,
   createdAt: { type: Date, default: Date.now },
@@ -184,6 +199,7 @@ export const Order = define("Order", {
   s.index({ deliveryPartnerId: 1, status: 1 });
   s.index({ createdAt: -1 });
   s.index({ paymentExpiresAt: 1 }, { sparse: true });
+  s.index({ reservationExpiresAt: 1 }, { sparse: true });
 });
 
 /** Append-only ledger of every order transition (who moved it, from what, to what, and why). */
@@ -303,6 +319,25 @@ export const AnalyticsEvent = define("AnalyticsEvent", {
   name: { type: S, required: true }, userId: S, anonId: S, props: Schema.Types.Mixed, at: { type: Date, default: Date.now },
 }, (s) => { s.index({ name: 1, at: -1 }); s.index({ at: -1 }); });
 
+// ── Catalogue operations ──
+
+export const SearchHistory = define("SearchHistory", { userId: { type: S, required: true }, query: { type: S, required: true }, at: { type: Date, default: Date.now } },
+  (s) => s.index({ userId: 1, at: -1 }));
+
+const importRow = new Schema({
+  line: Number, status: S, input: Schema.Types.Mixed, medicineId: S, candidates: Schema.Types.Mixed, errors: [S], outcome: S,
+}, { _id: false });
+
+export const InventoryImport = define("InventoryImport", {
+  pharmacyId: { type: S, required: true }, createdBy: S, status: { type: S, enum: ["PREVIEW", "CONFIRMED", "CANCELLED"] }, fileName: S,
+  rows: [importRow], createdAt: Date, confirmedAt: Date, imported: Number, sentToReview: Number,
+}, (s) => s.index({ pharmacyId: 1, createdAt: -1 }));
+
+export const MedicineMatchReview = define("MedicineMatchReview", {
+  pharmacyId: { type: S, required: true }, importId: S, line: Number, input: Schema.Types.Mixed, candidates: Schema.Types.Mixed,
+  status: { type: S, enum: ["PENDING", "MATCHED", "CREATED", "REJECTED"], default: "PENDING" }, resolvedMedicineId: S, note: S, resolvedBy: S, resolvedAt: Date, createdAt: Date,
+}, (s) => { s.index({ status: 1, createdAt: 1 }); s.index({ pharmacyId: 1, status: 1 }); });
+
 // ── Supporting collections ──
 
 /** Saved medicines: refill-ready (cadence + next refill date + reminder flag). */
@@ -333,7 +368,7 @@ export const AuditLog = define("AuditLog", {
 export const StoredFile = define("StoredFile", { bytes: { type: Buffer, select: true }, mimeType: S, ownerId: S });
 
 export const ALL_MODELS = [
-  Session, OtpChallenge, ServiceAreaInterest, PartnerApplication, PartnerDocument, CallbackRequest, AssistedConsent, AnalyticsEvent,
+  SearchHistory, InventoryImport, MedicineMatchReview, Session, OtpChallenge, ServiceAreaInterest, PartnerApplication, PartnerDocument, CallbackRequest, AssistedConsent, AnalyticsEvent,
   User, FamilyMember, Address, Medicine, Pharmacy, PharmacyInventory, Prescription, MedicineRequest, MedicineRequestResponse, Cart, Order, OrderItem, OrderStatusHistory,
   DeliveryPartner, Delivery, Payment, Settlement, ServiceArea, Notification, SupportTicket, SavedMedicine, Review, Offer, PlatformSettingsModel, AuditLog, StoredFile,
 ];

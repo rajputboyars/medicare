@@ -28,6 +28,9 @@ export const ACTIVE_RIDER_STATUSES: OrderStatus[] = ["RIDER_ASSIGNED", "PICKED_U
 const MAX_ACTIVE_JOBS = 3;
 /** Unpaid online orders give their stock back after this long. */
 export const PAYMENT_WINDOW_MS = 30 * 60_000;
+/** How long a pharmacy has to answer before its reservation is given back: quick for ordinary medicines, longer when a pharmacist must review a prescription. */
+export const PHARMACY_RESPONSE_WINDOW_MS = 2 * 3600_000;
+export const PRESCRIPTION_REVIEW_WINDOW_MS = 24 * 3600_000;
 
 type Actor = SessionUser | "SYSTEM";
 const roleOf = (a: Actor) => (a === "SYSTEM" ? "SYSTEM" : a.role);
@@ -90,6 +93,7 @@ export function transition(o: Order, to: OrderStatus, actor: Actor, note?: strin
     if (o.paymentMethod !== "COD" && o.paymentStatus !== "PAID" && o.paymentStatus !== "AUTHORIZED") throw conflict("Waiting for the customer's payment");
     // The units were reserved at checkout; confirming turns the promise into consumption.
     if (o.stockState === "RESERVED") { consume(o.stockAllocations); o.stockState = "CONSUMED"; }
+    o.reservationExpiresAt = undefined;
   }
   if (to === "CANCELLED") {
     if (o.stockState === "RESERVED") release(o.stockAllocations);
@@ -107,6 +111,7 @@ export function transition(o: Order, to: OrderStatus, actor: Actor, note?: strin
     if (dl) { dl.status = "FAILED"; dl.failureReason = note ?? "Order cancelled"; }
     o.deliveryPartnerId = undefined;
     o.paymentExpiresAt = undefined;
+    o.reservationExpiresAt = undefined;
     o.cancelReason = note;
     o.cancelledBy = actor === "SYSTEM" ? undefined : actor.role;
   }
@@ -123,18 +128,28 @@ export function transition(o: Order, to: OrderStatus, actor: Actor, note?: strin
   return o;
 }
 
-/** Cancels unpaid online orders whose payment window passed, giving their stock back. Safe to call often. */
-export function expireUnpaidOrders(at = Date.now()): number {
+/**
+ * Gives stock back for orders nobody completed. Runs from the server's housekeeping timer and also before checkout and list
+ * requests, so it never depends on a browser timer or an open page:
+ *  - online order not paid in time
+ *  - nobody (pharmacy / pharmacist) confirmed it in time
+ * The order is cancelled by SYSTEM and the reserved units are released through the same state machine as any cancellation.
+ */
+export function expireReservations(at = Date.now()): number {
   let n = 0;
   for (const o of db().orders) {
-    if (isFinal(o.status) || o.paymentMethod === "COD" || o.paymentStatus !== "PENDING" || !o.paymentExpiresAt) continue;
-    if (Date.parse(o.paymentExpiresAt) > at) continue;
-    transition(o, "CANCELLED", "SYSTEM", "Payment was not received in time");
-    notify(o.userId, "ORDER_CANCELLED", "Order cancelled", `Order ${o.code} was cancelled because the payment did not arrive in time.`);
+    if (isFinal(o.status) || o.stockState !== "RESERVED" || !o.reservationExpiresAt || Date.parse(o.reservationExpiresAt) > at) continue;
+    const unpaidOnline = o.paymentMethod !== "COD" && o.paymentStatus === "PENDING";
+    transition(o, "CANCELLED", "SYSTEM", unpaidOnline ? "Payment was not received in time" : "The pharmacy did not respond in time");
+    notify(o.userId, "ORDER_CANCELLED", "Order cancelled", unpaidOnline
+      ? `Order ${o.code} was cancelled because the payment did not arrive in time.`
+      : `Order ${o.code} was cancelled because the pharmacy could not confirm it in time. You have not been charged.`);
     n++;
   }
   return n;
 }
+/** Older name, kept for callers that only care about unpaid orders. */
+export const expireUnpaidOrders = expireReservations;
 
 // ───────────────────────── Checkout ─────────────────────────
 
@@ -178,6 +193,9 @@ function createOrderInner(user: SessionUser, input: CreateOrderInput): Order {
     if (!med) throw badRequest("A medicine in your cart no longer exists");
     const stock = stockFor(pharmacy.id, medicineId); // availability is pharmacy-specific and excludes reserved units
     if (!stock || stock.quantity < quantity) throw conflict(`${med.name} is not available in the quantity you chose at this pharmacy`);
+    // Price integrity, from OUR data: a batch that sells above its own MRP is a data error, never passed on to a customer
+    if (!(stock.sellingPrice > 0) || stock.sellingPrice > stock.mrp) throw conflict(`${med.name} cannot be ordered right now. The pharmacy is updating its price.`);
+    if (med.status !== "ACTIVE") throw conflict(`${med.name} is no longer available`);
     if (med.prescriptionRequired) needsRx = true;
     if (med.restricted) hasRestricted = true;
     items.push({ id: `${orderId}_i${++n}`, orderId, medicineId, name: med.name, strength: med.strength, quantity, mrp: stock.mrp, unitPrice: stock.sellingPrice, prescriptionRequired: med.prescriptionRequired });
@@ -224,6 +242,7 @@ function createOrderInner(user: SessionUser, input: CreateOrderInput): Order {
     deliveryType: input.deliveryType, subtotal, deliveryFee: fee, discount, total, paymentMethod: input.paymentMethod, paymentStatus: pay.status,
     etaMinutes: eta.minutes, isRepeat: input.isRepeat, createdAt: now,
     stockAllocations: allocations, stockState: "RESERVED", paymentExpiresAt: online ? new Date(Date.now() + PAYMENT_WINDOW_MS).toISOString() : undefined,
+    reservationExpiresAt: new Date(Date.now() + (online ? PAYMENT_WINDOW_MS : needsRx ? PRESCRIPTION_REVIEW_WINDOW_MS : PHARMACY_RESPONSE_WINDOW_MS)).toISOString(),
   };
   recordStatus(order, undefined, initial, user, "Order placed");
   if (rx) { rx.status = rx.status === "APPROVED" ? "APPROVED" : "UNDER_REVIEW"; rx.pharmacyId = pharmacy.id; }
@@ -246,6 +265,8 @@ export function confirmPayment(user: SessionUser, orderId: string, providerRef: 
   if (o.status === "CANCELLED") throw conflict("This order was cancelled");
   o.paymentStatus = providerFor(o.paymentMethod).capture(o, providerRef).status;
   o.paymentExpiresAt = undefined;
+  // Paid: the next deadline is the pharmacy's, not the customer's
+  if (o.stockState === "RESERVED") o.reservationExpiresAt = new Date(Date.now() + (o.items.some((i) => i.prescriptionRequired) ? PRESCRIPTION_REVIEW_WINDOW_MS : PHARMACY_RESPONSE_WINDOW_MS)).toISOString();
   const pay = db().payments.find((p) => p.orderId === o.id);
   if (pay) { pay.status = o.paymentStatus; pay.providerRef = providerRef; pay.paidAt = new Date().toISOString(); }
   return o;

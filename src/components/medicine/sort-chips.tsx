@@ -1,21 +1,20 @@
 "use client";
 import clsx from "clsx";
-import { Clock, MapPin, Store, Tag, type LucideIcon } from "lucide-react";
+import { Clock, MapPin, Tag, type LucideIcon } from "lucide-react";
 
-export type Strategy = "fastest" | "cheapest" | "nearest" | "preferred";
+export type Sort = "FASTEST" | "CHEAPEST" | "NEAREST";
 
-const OPTIONS: { value: Strategy; label: string; icon: LucideIcon }[] = [
-  { value: "fastest", label: "Fastest", icon: Clock },
-  { value: "cheapest", label: "Cheapest", icon: Tag },
-  { value: "nearest", label: "Nearest", icon: MapPin },
-  { value: "preferred", label: "My pharmacy", icon: Store },
+const OPTIONS: { value: Sort; label: string; icon: LucideIcon }[] = [
+  { value: "FASTEST", label: "Fastest", icon: Clock },
+  { value: "CHEAPEST", label: "Cheapest", icon: Tag },
+  { value: "NEAREST", label: "Nearest", icon: MapPin },
 ];
 
-/** Fastest / Cheapest / Nearest (and optionally "My pharmacy"). One tap, one choice; selected chip has a tick-style fill and bold text. */
-export function SortChips({ value, onChange, includePreferred = false, label = "Choose by" }: { value: Strategy; onChange: (s: Strategy) => void; includePreferred?: boolean; label?: string }) {
+/** Fastest / Cheapest / Nearest. One tap, one choice; the selected chip is filled and bold, not just a different colour. */
+export function SortChips({ value, onChange, label = "Sort by" }: { value: Sort; onChange: (s: Sort) => void; label?: string }) {
   return (
     <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
-      {OPTIONS.filter((o) => includePreferred || o.value !== "preferred").map((o) => {
+      {OPTIONS.map((o) => {
         const on = value === o.value;
         return (
           <button key={o.value} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.value)}

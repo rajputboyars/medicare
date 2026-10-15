@@ -7,7 +7,7 @@ import { offersFor, pincodeCenter, searchMedicines } from "@/server/features/med
 import { codeFor, deliveryOf, advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, confirmPayment, createOrder, getOrderFor, pharmacyOrderView, quoteOrder, rejectOrder, reviewOrderPrescription, reviewPrescription, userSafeOrder } from "@/server/features/orders/orders.service";
 import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory, earningsSummary, riderStep, riderSummary, setAvailability } from "@/server/features/delivery/delivery.service";
 import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
-import { bulkUploadCsv, customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
+import { customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
 import { createMedicineRequest, getCart, myRequests, openRequestsForPharmacy, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/features/medicine-requests/requests.service";
 import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/features/admin/admin.service";
 
@@ -397,13 +397,6 @@ describe("rider workflow and privacy", () => {
 });
 
 describe("pharmacy portal data", () => {
-  it("imports CSV with per-row errors and updates stock", () => {
-    const csv = ["medicine,batch,expiry,mrp,sellingPrice,quantity", "Paracetamol 650,Z9,2030-01-01,33,30,100", "Unknown Pill,Z1,2030-01-01,10,9,5", "Metformin 500,Z2,2030-01-01,32,40,10"].join("\n");
-    const r = bulkUploadCsv(owner, csv);
-    expect(r.imported).toBe(1);
-    expect(r.errors.map((e) => e.row)).toEqual([3, 4]);
-    expect(r.errors[1].error).toMatch(/cannot exceed MRP/);
-  });
   it("only lets a pharmacy edit its own stock; same batch updates instead of duplicating", () => {
     const other = db().inventory.find((i) => i.pharmacyId === "ph_2")!;
     expect(() => quickStockUpdate(owner, other.id, 5)).toThrow();

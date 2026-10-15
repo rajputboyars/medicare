@@ -12,16 +12,18 @@ import { describeStatus } from "@/lib/order-copy";
 import { OrderStatusBadge } from "@/components/order/order-status-badge";
 import { OrderStatusTimeline } from "@/components/order/order-status-timeline";
 import { Badge, Button, Card, ConfirmationDialog, ErrorState, LinkButton, Notice, PageTitle, QueryBoundary, Select, SectionHeader, SkeletonList, Success } from "@/components/ui";
-import type { Order } from "@/lib/types";
+import { CANCEL_REASON_LABEL, CUSTOMER_CANCEL_REASONS } from "@/lib/cancel-reasons";
+import type { CancelReasonCode, Order } from "@/lib/types";
 
-type O = Order & { deliveryOtp?: string; pickupOtp?: string; canCancel?: boolean; pharmacy?: { id: string; name: string; mobile: string; address: string }; rider?: { name: string; mobile: string; vehicle: string } };
+interface PaymentInfo { id: string; status: string; method: string; amount: number; refundStatus?: string }
+type O = Order & { deliveryOtp?: string; pickupOtp?: string; canCancel?: boolean; cancelNeedsApproval?: boolean; codAvailable?: boolean; payment?: PaymentInfo; tracking?: { kmAway?: number }; delivery?: { status: string }; pharmacy?: { id: string; name: string; mobile: string; address: string }; rider?: { name: string; mobile: string; vehicle: string } };
 
 function Detail({ id }: { id: string }) {
   const qc = useQueryClient();
   const router = useRouter();
   const placed = useSearchParams().get("placed");
   const q = useQuery({ queryKey: ["order", id], queryFn: () => api<O>(`/api/orders/${id}`), refetchInterval: (query) => (query.state.data && isFinal(query.state.data.status) ? false : 10_000) });
-  const [reason, setReason] = useState("Ordered by mistake");
+  const [reason, setReason] = useState<CancelReasonCode>("ORDERED_BY_MISTAKE");
   const [stars, setStars] = useState(5);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [fileErr, setFileErr] = useState<string>();
@@ -29,6 +31,18 @@ function Detail({ id }: { id: string }) {
   const act = useMutation({
     mutationFn: (body: Record<string, unknown>) => post<O>(`/api/orders/${id}`, body),
     onSuccess: () => { setConfirmCancel(false); qc.invalidateQueries({ queryKey: ["order", id] }); qc.invalidateQueries({ queryKey: ["orders"] }); },
+  });
+
+  /** Payment buttons never mark anything paid: the gateway tells our server, and this page just refreshes. */
+  const payAct = useMutation({
+    mutationFn: (a: { kind: "pay" | "retry" | "cod"; paymentId?: string }) =>
+      a.kind === "pay" ? post("/api/payments/" + a.paymentId + "/mock-complete", { outcome: "success" })
+        : post("/api/orders/" + id + "/payment/retry", a.kind === "cod" ? { method: "COD" } : {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["order", id] }); qc.invalidateQueries({ queryKey: ["orders"] }); },
+  });
+  const decide = useMutation({
+    mutationFn: (decision: "CONTINUE" | "CANCEL") => post("/api/orders/" + id + "/partial-fulfillment", { decision }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["order", id] }); qc.invalidateQueries({ queryKey: ["orders"] }); },
   });
 
   async function openRx(rxId: string) {
@@ -41,7 +55,11 @@ function Detail({ id }: { id: string }) {
       {(o) => {
         const final = isFinal(o.status);
         const last = o.statusHistory.at(-1);
-        const needsPay = o.paymentStatus === "PENDING" && o.status !== "CANCELLED";
+        const online = o.paymentMethod !== "COD";
+        const needsPay = online && (o.paymentStatus === "PENDING" || o.paymentStatus === "FAILED") && o.status !== "CANCELLED";
+        const pf = o.partialFulfillment?.status === "PENDING_CUSTOMER" ? o.partialFulfillment : undefined;
+        const [etaLo, etaHi] = o.etaRange ?? [o.etaMinutes, Math.round(o.etaMinutes * 1.4)];
+        const refundText = o.refundStatus === "COMPLETED" ? "Your refund is complete." : o.refundStatus === "FAILED" ? "Your refund is delayed. Our team is fixing it and you do not need to do anything." : o.refundStatus === "NOT_REQUIRED" ? "" : "Your refund is on its way. It usually reaches you in 5 to 7 working days.";
         const needsBetterRx = o.status === "PRESCRIPTION_REVIEW" && last?.note?.startsWith("Clearer prescription needed");
         const sentence = describeStatus(o.status, { pharmacy: o.pharmacy?.name, rider: o.rider?.name.split(" ")[0], note: o.cancelReason ?? last?.note });
         return (
@@ -53,17 +71,39 @@ function Detail({ id }: { id: string }) {
             <Card className={o.status === "CANCELLED" ? "mb-4 border-emergency-line bg-emergency-50" : final ? "mb-4 border-ok-line bg-ok-50" : "mb-4 border-brand-200 bg-brand-50"} aria-live="polite">
               <div className="mb-2"><OrderStatusBadge status={o.status} /></div>
               <p className="t-section">{sentence}</p>
-              {!final && <p className="t-support mt-1">Estimated delivery: about <b className="text-ink">{o.etaMinutes}–{Math.round(o.etaMinutes * 1.4)} minutes</b>. It depends on stock, the prescription check and delivery partner availability.{o.deliveryType === "PRIORITY" && <> <Badge tone="blue">Priority</Badge></>}</p>}
-              {o.status === "CANCELLED" && o.paymentStatus === "REFUNDED" && <p className="t-support mt-1 text-ink">Your payment will be refunded to the original method in 3–5 working days.</p>}
+              {!final && <p className="t-support mt-1">Estimated delivery: about <b className="text-ink">{etaLo}–{etaHi} minutes</b>. It depends on stock, the prescription check and delivery partner availability.{o.deliveryType === "PRIORITY" && <> <Badge tone="blue">Priority</Badge></>}</p>}
+              {refundText && <p className="t-support mt-1 text-ink">{refundText}</p>}
+              {o.tracking?.kmAway !== undefined && <p className="t-support mt-1">Your delivery partner is about <b className="text-ink">{o.tracking.kmAway} km</b> away.</p>}
             </Card>
 
             {needsBetterRx && (
               <div className="mb-4"><Notice tone="amber" title="The pharmacist needs a clearer prescription">{last?.note?.replace("Clearer prescription needed: ", "")}
                 <div className="mt-3"><LinkButton href={`/upload-prescription?order=${o.id}`}>Upload a clearer prescription</LinkButton></div></Notice></div>
             )}
-            {needsPay && (
-              <div className="mb-4"><Notice tone="blue" title={`Pay ${inr(o.total)} by ${o.paymentMethod}`}>This is a demo payment screen. With a real gateway, your payment app opens here.
-                <div className="mt-3"><Button size="lg" loading={act.isPending && act.variables?.action === "pay"} onClick={() => act.mutate({ action: "pay", providerRef: `demo_${Date.now()}` })}>Pay {inr(o.total)} securely</Button></div></Notice></div>
+            {pf && (
+              <div className="mb-4"><Notice tone="amber" title="Some medicines are not available">
+                <ul className="mt-1 list-disc pl-5">{pf.unavailable.map((u) => <li key={u.itemId}>{u.name} ×{u.quantity}: {u.reason}</li>)}</ul>
+                <p className="mt-2">If you continue, your order will be <b>{inr(pf.proposed.total)}</b> for the other medicines.{o.paymentMethod !== "COD" && o.total > pf.proposed.total ? " We will refund " + inr(o.total - pf.proposed.total) + "." : ""}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="lg" loading={decide.isPending && decide.variables === "CONTINUE"} onClick={() => decide.mutate("CONTINUE")}>Continue with the rest</Button>
+                  <Button size="lg" variant="danger-outline" loading={decide.isPending && decide.variables === "CANCEL"} onClick={() => decide.mutate("CANCEL")}>Cancel the whole order</Button>
+                </div>
+                {decide.isError && <p role="alert" className="mt-2 font-semibold text-emergency">{(decide.error as Error).message}</p>}
+              </Notice></div>
+            )}
+            {o.cancellationRequest?.status === "PENDING" && <div className="mb-4"><Notice tone="blue" title="Waiting for the pharmacy">You asked to cancel. The pharmacy has already started on this order, so they will answer shortly.</Notice></div>}
+            {o.delivery?.status && ["DELIVERY_FAILED", "RETURNING_TO_PHARMACY", "RETURNED_TO_PHARMACY"].includes(o.delivery.status) && <div className="mb-4"><Notice tone="amber" title="We could not deliver your order">Our team will call you to try again or bring it back and refund you. You do not need to do anything.</Notice></div>}
+            {needsPay && o.payment && (
+              <div className="mb-4"><Notice tone={o.paymentStatus === "FAILED" ? "amber" : "blue"} title={o.paymentStatus === "FAILED" ? "Your payment did not go through" : "Pay " + inr(o.total) + " by " + o.paymentMethod}>
+                {o.paymentStatus === "FAILED" ? "You can try again, pay cash on delivery, or cancel the order." : "This is a demo payment screen. With a real gateway, your payment app opens here."}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {o.paymentStatus === "FAILED"
+                    ? <Button size="lg" loading={payAct.isPending && payAct.variables?.kind === "retry"} onClick={() => payAct.mutate({ kind: "retry" })}>Try payment again</Button>
+                    : <Button size="lg" loading={payAct.isPending && payAct.variables?.kind === "pay"} onClick={() => payAct.mutate({ kind: "pay", paymentId: o.payment!.id })}>Pay {inr(o.total)} securely</Button>}
+                  {o.codAvailable && <Button size="lg" variant="secondary" loading={payAct.isPending && payAct.variables?.kind === "cod"} onClick={() => payAct.mutate({ kind: "cod" })}>Pay cash on delivery instead</Button>}
+                </div>
+                {payAct.isError && <p role="alert" className="mt-2 font-semibold text-emergency">{(payAct.error as Error).message}</p>}
+              </Notice></div>
             )}
             {act.isError && !confirmCancel && <div className="mb-4"><ErrorState message={(act.error as Error).message} /></div>}
 
@@ -91,7 +131,7 @@ function Detail({ id }: { id: string }) {
               <dl className="mt-3 space-y-1.5 border-t border-line pt-3">
                 <div className="flex justify-between"><dt>Medicines</dt><dd>{inr(o.subtotal)}</dd></div>
                 <div className="flex justify-between"><dt>Delivery</dt><dd>{o.deliveryFee ? inr(o.deliveryFee) : "Free"}</dd></div>
-                <div className="flex justify-between"><dt>Other fees</dt><dd>₹0</dd></div>
+                <div className="flex justify-between"><dt>Other fees</dt><dd>{o.platformFee ? inr(o.platformFee) : "₹0"}</dd></div>
                 {o.discount > 0 && <div className="flex justify-between text-ok"><dt>Offer</dt><dd>−{inr(o.discount)}</dd></div>}
                 <div className="flex justify-between border-t border-line pt-2"><dt className="t-section">Total</dt><dd className="t-number text-xl">{inr(o.total)}</dd></div>
                 <div className="flex justify-between t-caption"><dt>Payment</dt><dd>{o.paymentMethod === "COD" ? "Cash on delivery" : o.paymentMethod} · {o.paymentStatus === "PAID" ? "paid" : o.paymentMethod === "COD" && o.paymentStatus === "PENDING" ? "pay on delivery" : o.paymentStatus.replace("_", " ").toLowerCase()}</dd></div>
@@ -124,15 +164,15 @@ function Detail({ id }: { id: string }) {
                 {act.isSuccess && act.variables?.action === "review" && <p role="status" className="mt-2 text-sm font-semibold text-ok">Thank you for your rating.</p>}</Card>
             )}
 
-            {o.canCancel && (
-              <div className="mt-4 text-center"><Button variant="danger-outline" onClick={() => setConfirmCancel(true)}>Cancel this order</Button>
-                <p className="t-caption mt-2">Free until the delivery partner picks it up.</p></div>
+            {o.canCancel && o.cancellationRequest?.status !== "PENDING" && (
+              <div className="mt-4 text-center"><Button variant="danger-outline" onClick={() => setConfirmCancel(true)}>{o.cancelNeedsApproval ? "Ask to cancel this order" : "Cancel this order"}</Button>
+                <p className="t-caption mt-2">{o.cancelNeedsApproval ? "The pharmacy has started on your order, so they need to agree." : "Free until the pharmacy starts preparing it."}</p></div>
             )}
             <ConfirmationDialog open={confirmCancel} onClose={() => setConfirmCancel(false)} tone="danger" title="Cancel this order?"
-              description="If you already paid online, the money comes back in 3–5 working days." confirmLabel="Yes, cancel order" cancelLabel="No, keep it"
+              description="If you already paid online, the money comes back to you." confirmLabel="Yes, cancel order" cancelLabel="No, keep it"
               loading={act.isPending && act.variables?.action === "cancel"} error={act.isError ? (act.error as Error).message : undefined}
-              onConfirm={() => act.mutate({ action: "cancel", reason })}>
-              <Select label="Why are you cancelling?" value={reason} onChange={(e) => setReason(e.target.value)}>{["Ordered by mistake", "Found it elsewhere", "Taking too long", "Wrong address", "Other"].map((r) => <option key={r}>{r}</option>)}</Select>
+              onConfirm={() => act.mutate({ action: "cancel", reasonCode: reason })}>
+              <Select label="Why are you cancelling?" value={reason} onChange={(e) => setReason(e.target.value as CancelReasonCode)}>{CUSTOMER_CANCEL_REASONS.map((r) => <option key={r} value={r}>{CANCEL_REASON_LABEL[r]}</option>)}</Select>
             </ConfirmationDialog>
           </>
         );

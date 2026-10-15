@@ -101,8 +101,9 @@ ok("start → OUT_FOR_DELIVERY", (await call(rider4.cookie, "POST", `/api/delive
 const live = await call(customer.cookie, "GET", `/api/orders/${id}`);
 ok("customer sees rider + delivery OTP", !!live.data?.rider && /^\d{4}$/.test(live.data?.deliveryOtp ?? ""));
 ok("cannot cancel once on the way", (await call(customer.cookie, "POST", `/api/orders/${id}`, { action: "cancel", reason: "late" })).status === 409);
-ok("wrong delivery OTP refused", (await call(rider4.cookie, "POST", `/api/delivery/orders/${id}`, { action: "deliver", otp: live.data.deliveryOtp === "0000" ? "1111" : "0000" })).status === 400);
-ok("deliver with OTP → DELIVERED", (await call(rider4.cookie, "POST", `/api/delivery/orders/${id}`, { action: "deliver", otp: live.data.deliveryOtp })).data?.status === "DELIVERED");
+ok("wrong delivery OTP refused", (await call(rider4.cookie, "POST", `/api/delivery/orders/${id}`, { action: "deliver", otp: live.data.deliveryOtp === "0000" ? "1111" : "0000", cashCollected: live.data.total })).status === 400);
+ok("cash on delivery needs the cash recorded first", (await call(rider4.cookie, "POST", `/api/delivery/orders/${id}`, { action: "deliver", otp: live.data.deliveryOtp })).status === 400);
+ok("deliver with OTP + cash → DELIVERED", (await call(rider4.cookie, "POST", `/api/delivery/orders/${id}`, { action: "deliver", otp: live.data.deliveryOtp, cashCollected: live.data.total })).data?.status === "DELIVERED");
 const done = await call(customer.cookie, "GET", `/api/orders/${id}`);
 ok("COD marked paid; history has every step", done.data?.paymentStatus === "PAID" && done.data.statusHistory.length === 8);
 const hist = await call(rider4.cookie, "GET", "/api/delivery/history");
@@ -129,7 +130,7 @@ ok("signed URL issued, no file key leaked", /^\/api\/files\//.test(meta.data?.ur
 ok("owner can open private file (no-store)", await fetch(base + meta.data.url, { headers: { cookie: customer.cookie } }).then((r) => r.status === 200 && (r.headers.get("cache-control") ?? "").includes("no-store")));
 ok("link without session refused", (await fetch(base + meta.data.url)).status === 403);
 ok("link in a rider's session refused", (await fetch(base + meta.data.url, { headers: { cookie: rider.cookie } })).status === 403);
-ok("tampered signature refused", (await fetch(base + meta.data.url.replace(/sig=./, "sig=x"), { headers: { cookie: customer.cookie } })).status === 403);
+ok("tampered signature refused", (await fetch(base + meta.data.url.replace(/sig=(.)/, (_m, c) => "sig=" + (c === "x" ? "y" : "x")), { headers: { cookie: customer.cookie } })).status === 403);
 ok("rider cannot request prescription metadata", (await call(rider.cookie, "GET", `/api/prescriptions/${up.data.id}`)).status === 403);
 
 const rx = await call(customer.cookie, "POST", "/api/orders", { pharmacyId: "ph_1", addressId: "ad_1", items: [{ medicineId: "med_1", quantity: 2 }], prescriptionId: up.data.id, paymentMethod: "UPI", deliveryType: "NORMAL" });
@@ -142,9 +143,11 @@ ok("reject without a reason refused", (await call(pharmacist.cookie, "POST", `/a
 ok("clarification request keeps order in review", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "review", decision: "CLARIFY", note: "Signature is cut off" })).data?.status === "PRESCRIPTION_REVIEW");
 ok("approve → PRESCRIPTION_APPROVED", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "review", decision: "APPROVE" })).data?.status === "PRESCRIPTION_APPROVED");
 ok("an unpaid online order cannot be confirmed", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}/preparing`)).status === 409 && (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "step", step: "confirm" })).status === 409);
-ok("UPI payment captured", (await call(customer.cookie, "POST", `/api/orders/${rx.data.id}`, { action: "pay", providerRef: "demo_123" })).data?.paymentStatus === "PAID");
+ok("the browser can no longer declare a payment paid", (await call(customer.cookie, "POST", `/api/orders/${rx.data.id}`, { action: "pay", providerRef: "demo_123" })).status === 400);
+ok("UPI payment captured by the (signed) gateway webhook", (await call(customer.cookie, "POST", `/api/payments/${rx.data.payment.id}/mock-complete`, { outcome: "success" })).success === true && (await call(customer.cookie, "GET", `/api/orders/${rx.data.id}`)).data?.paymentStatus === "PAID");
+ok("an unsigned webhook is refused", (await fetch(base + "/api/payments/webhook", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventId: "evt_x", type: "PAYMENT_CAPTURED" }) })).status === 401);
 ok("confirm → CONFIRMED", (await call(pharmacist.cookie, "POST", `/api/pharmacy/orders/${rx.data.id}`, { action: "step", step: "confirm" })).data?.status === "CONFIRMED");
-ok("customer cancels before pickup → refunded", (await call(customer.cookie, "POST", `/api/orders/${rx.data.id}`, { action: "cancel", reason: "Changed my mind" })).data?.paymentStatus === "REFUNDED");
+ok("customer cancels before pickup → refunded", (await call(customer.cookie, "POST", `/api/orders/${rx.data.id}`, { action: "cancel", reasonCode: "CHANGED_MIND" })).data?.paymentStatus === "REFUNDED");
 
 // ── Admin ──
 const stats = await call(admin.cookie, "GET", "/api/admin/stats");

@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Banknote, CreditCard, Minus, Plus, ShoppingBag, Smartphone, Store, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { api, post } from "@/lib/api";
+import { useRef } from "react";
 import { useCart } from "@/lib/store";
 import { useMe, useOnline } from "@/lib/hooks";
 import { inr } from "@/lib/pricing";
@@ -67,11 +68,19 @@ export default function Checkout() {
     retry: false,
   });
 
+  // One key per checkout attempt: a double tap or a retry after a slow network returns the FIRST order instead of placing another.
+  // It changes when the basket changes (a different request needs a different key).
+  const checkoutKey = useRef<{ basket: string; key: string }>({ basket: "", key: "" });
   const place = useMutation({
-    mutationFn: () => post<{ id: string }>("/api/orders", {
-      pharmacyId: cart.pharmacyId, addressId, familyMemberId: member || undefined, items, prescriptionId: cart.prescriptionId,
-      deliveryType: delivery, paymentMethod: payment, offerCode: appliedOffer,
-    }),
+    mutationFn: () => {
+      const body = {
+        pharmacyId: cart.pharmacyId, addressId, familyMemberId: member || undefined, items, prescriptionId: cart.prescriptionId,
+        deliveryType: delivery, paymentMethod: payment, offerCode: appliedOffer,
+      };
+      const basket = JSON.stringify(body);
+      if (checkoutKey.current.basket !== basket) checkoutKey.current = { basket, key: "co-" + crypto.randomUUID() };
+      return post<{ id: string }>("/api/orders", body, { "Idempotency-Key": checkoutKey.current.key });
+    },
     onSuccess: (o) => { cart.clear(); router.push(`/orders/${o.id}?placed=1`); },
   });
 

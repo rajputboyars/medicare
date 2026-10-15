@@ -18,6 +18,9 @@ export interface Db {
   pharmacies: T.Pharmacy[];
   inventory: T.PharmacyInventory[];
   searchHistory: T.SearchHistoryEntry[];
+  paymentAttempts: T.PaymentAttempt[];
+  refunds: T.Refund[];
+  idempotencyRecords: T.IdempotencyRecord[];
   inventoryImports: T.InventoryImport[];
   matchReviews: T.MedicineMatchReview[];
   prescriptions: T.Prescription[];
@@ -58,6 +61,15 @@ export const DEFAULT_SETTINGS: T.PlatformSettings & { id: string } = {
   riderPayoutNormal: 45,
   riderPayoutPriority: 70,
   supportPhone: "+911800000000",
+  platformFee: 0,
+  codMaxAmount: 5000,
+  riderPerKm: 6,
+  maxConcurrentDeliveries: 1,
+  settlementHoldHours: 24,
+  discountPlatformSharePercent: 100,
+  partialProposalMinutes: 30,
+  paymentWindowMinutes: 30,
+  eta: { riderAssignMinutes: 5, noRiderMinutes: 20, reviewMinutes: 15, normalKmPerMin: 0.3, priorityKmPerMin: 0.45, minMinutes: 20, rangeFactor: 1.4 },
 };
 
 const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString();
@@ -140,7 +152,7 @@ export function buildSeed(): Db {
       inventory.push({
         id: `inv_${inventory.length + 1}`, pharmacyId: p.id, medicineId: m.id, batch: `B${Math.floor(r() * 9000 + 1000)}`,
         expiry: daysAhead(120 + Math.floor(r() * 500)), mrp: m.mrp, sellingPrice: Math.round(m.mrp * (0.88 + r() * 0.1)),
-        stockQuantity: r() < 0.12 ? Math.floor(r() * 6) : 25 + Math.floor(r() * 80), reservedQuantity: 0, lowStockThreshold: 10, lastUpdatedAt: hoursAgo(0.3 + r() * 70),
+        stockQuantity: r() < 0.12 ? Math.floor(r() * 6) : 25 + Math.floor(r() * 80), reservedQuantity: 0, status: "ACTIVE", lowStockThreshold: 10, lastUpdatedAt: hoursAgo(0.3 + r() * 70),
       });
     }
   }
@@ -148,7 +160,7 @@ export function buildSeed(): Db {
     const row = inventory.find((i) => i.pharmacyId === phId && i.medicineId === medId);
     const med = medicines.find((m) => m.id === medId)!;
     if (row) row.stockQuantity = Math.max(row.stockQuantity, qty);
-    else inventory.push({ id: `inv_${inventory.length + 1}`, pharmacyId: phId, medicineId: medId, batch: "B1001", expiry: daysAhead(300), mrp: med.mrp, sellingPrice: Math.round(med.mrp * 0.92), stockQuantity: qty, reservedQuantity: 0, lowStockThreshold: 10, lastUpdatedAt: hoursAgo(1.5) });
+    else inventory.push({ id: `inv_${inventory.length + 1}`, pharmacyId: phId, medicineId: medId, batch: "B1001", expiry: daysAhead(300), mrp: med.mrp, sellingPrice: Math.round(med.mrp * 0.92), stockQuantity: qty, reservedQuantity: 0, status: "ACTIVE", lowStockThreshold: 10, lastUpdatedAt: hoursAgo(1.5) });
   };
   for (const id of [MED.METFORMIN, MED.TELMISARTAN, MED.AMLODIPINE, MED.THYRONORM, MED.PARACETAMOL, MED.CROCIN, MED.ORS, MED.CETIRIZINE, MED.VITAMIN_D, MED.IBUPROFEN]) forceStock("ph_1", id, 80);
   for (const id of [MED.METFORMIN, MED.PARACETAMOL, MED.ORS, MED.CETIRIZINE, MED.VITAMIN_D]) forceStock("ph_2", id, 60);
@@ -206,7 +218,7 @@ export function buildSeed(): Db {
     addr("ad_6", "u_5", "Home", "Sunita Devi", "9876500005", "261125", "Biswan", "Naya Ganj", "Near the Shiv temple and water tank", "Brick house, red door", { lat: 27.5920, lng: 80.7090 }),
   ];
 
-  const settings = DEFAULT_SETTINGS;
+  const settings = structuredClone(DEFAULT_SETTINGS); // a copy: changing settings at runtime must never edit the defaults
   const med = (id: string) => medicines.find((m) => m.id === id)!;
   const priceAt = (phId: string, medId: string) => inventory.find((i) => i.pharmacyId === phId && i.medicineId === medId)?.sellingPrice ?? med(medId).mrp;
   const snap = (a: T.Address) => { const { id: _i, userId: _u, ...rest } = a; void _i; void _u; return rest; };
@@ -239,7 +251,7 @@ export function buildSeed(): Db {
     const o: T.Order = {
       id, code, userId: s.userId, familyMemberId: s.fm, pharmacyId: s.ph, addressId: a.id, addressSnapshot: snap(a), items, prescriptionId: s.rx,
       status: s.status, statusHistory, deliveryType: type, subtotal, deliveryFee: fee, discount: 0, total: subtotal + fee, paymentMethod: s.pay, paymentStatus,
-      etaMinutes: type === "PRIORITY" ? 28 : 42,
+      etaMinutes: type === "PRIORITY" ? 28 : 42, platformFee: 0, refundStatus: paymentStatus === "REFUNDED" ? "COMPLETED" : "NOT_REQUIRED",
       deliveryPartnerId: s.rider, stockAllocations, stockState, cancelReason: s.reason, cancelledBy: s.by, createdAt: hoursAgo(s.ageH),
     };
     orders.push(o);
@@ -248,7 +260,12 @@ export function buildSeed(): Db {
       if (stockState === "RESERVED") inv.reservedQuantity += a.quantity;
       else if (s.status !== "DELIVERED") inv.stockQuantity = Math.max(0, inv.stockQuantity - a.quantity);
     }
-    payments.push({ id: `pay_${seq}`, orderId: id, userId: s.userId, method: s.pay, provider: s.pay === "COD" ? "COD" : "MOCK", amount: o.total, refundedAmount: paymentStatus === "REFUNDED" ? o.total : 0, status: paymentStatus, providerRef: s.pay === "COD" ? undefined : `demo_${s.pay.toLowerCase()}_${seq}`, createdAt: o.createdAt });
+    payments.push({
+      id: `pay_${seq}`, orderId: id, userId: s.userId, method: s.pay, provider: s.pay === "COD" ? "COD" : "MOCK", amount: o.total, currency: "INR", refundedAmount: paymentStatus === "REFUNDED" ? o.total : 0, status: paymentStatus,
+      providerOrderId: s.pay === "COD" ? undefined : `mock_order_${seq}`, providerPaymentId: s.pay !== "COD" && paymentStatus !== "PENDING" && paymentStatus !== "FAILED" ? `demo_${s.pay.toLowerCase()}_${seq}` : undefined,
+      paidAt: paymentStatus === "PAID" || paymentStatus === "REFUNDED" ? o.createdAt : undefined, codCollectedAt: s.pay === "COD" && s.status === "DELIVERED" ? o.createdAt : undefined, codCollectedAmount: s.pay === "COD" && s.status === "DELIVERED" ? o.total : undefined,
+      createdAt: o.createdAt, updatedAt: o.createdAt,
+    });
     if (["READY_FOR_PICKUP", "RIDER_ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"].includes(s.status)) {
       const dlId = `dl_${seq}`;
       const nonce = newNonce();
@@ -347,7 +364,7 @@ export function buildSeed(): Db {
 
   return {
     users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory,
-    searchHistory: [], inventoryImports: [], matchReviews: [], sessions: [], otpChallenges: [], serviceAreaInterests: [], callbackRequests: [], assistedConsents: [], analytics: [],
+    searchHistory: [], paymentAttempts: [], refunds: [], idempotencyRecords: [], inventoryImports: [], matchReviews: [], sessions: [], otpChallenges: [], serviceAreaInterests: [], callbackRequests: [], assistedConsents: [], analytics: [],
     partnerApplications, partnerDocuments, deliveryPartners, deliveries, payments,
     settlements: [
       { id: "set_1", partnerType: "PHARMACY", partnerId: "ph_1", periodStart: hoursAgo(24 * 37), periodEnd: hoursAgo(24 * 7), orderCount: 2, gross: orders[0].total + orders[6].total, commission: Math.round((orders[0].total + orders[6].total) * 0.08), net: Math.round((orders[0].total + orders[6].total) * 0.92), status: "PAID", createdAt: hoursAgo(24 * 7) },

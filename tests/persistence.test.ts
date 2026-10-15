@@ -38,9 +38,18 @@ describe.skipIf(!up)("MongoDB persistence", () => {
   const strip = (v: unknown): unknown => JSON.parse(JSON.stringify(v, (_k, x) => (x instanceof Uint8Array ? Array.from(x).join(",") : x)));
   const byId = <T extends { id: string }>(xs: T[]) => [...xs].sort((a, b) => a.id.localeCompare(b.id));
 
+  /** Which fields differ between what we wrote and what we read back (first 6), to make a failing schema easy to fix. */
+  const differingFields = (a: { id: string }[], b: { id: string }[]) => {
+    const out = new Set<string>();
+    for (const x of a) { const y = b.find((r) => r.id === x.id) as Record<string, unknown> | undefined; const xs = x as unknown as Record<string, unknown>; for (const k of new Set([...Object.keys(xs), ...Object.keys(y ?? {})])) if (JSON.stringify(xs[k]) !== JSON.stringify(y?.[k])) out.add(k); }
+    return [...out].slice(0, 6);
+  };
+
   it("every collection round-trips exactly (schemas lose nothing)", async () => {
     const expected = S.db();
     const loaded = await P.__testing.loadAll();
+    const mismatched: string[] = [];
+    let first: unknown;
     for (const key of Object.keys(expected) as (keyof typeof expected)[]) {
       if (key === "files") {
         expect([...loaded.files.keys()].sort()).toEqual([...expected.files.keys()].sort());
@@ -49,8 +58,10 @@ describe.skipIf(!up)("MongoDB persistence", () => {
       }
       const a = byId(expected[key] as unknown as { id: string }[]);
       const b = byId(loaded[key] as unknown as { id: string }[]);
-      expect(strip(b), `collection ${String(key)}`).toEqual(strip(a));
+      try { expect(strip(b), `collection ${String(key)}`).toEqual(strip(a)); } catch (e) { mismatched.push(String(key) + " [" + differingFields(a, b).join(", ") + "]"); if (!first) first = e; }
     }
+    // Report every collection that differs, not just the first one
+    if (first) { console.error("collections that do not round-trip:", mismatched.join(", ")); throw first; }
   });
 
   it("keeps secrets that are select:false (password hashes, OTPs, file keys)", async () => {

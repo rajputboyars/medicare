@@ -13,6 +13,17 @@ export const EVENT_CHANNELS: Record<NotificationEvent, NotificationChannel[]> = 
   REFILL_REMINDER: ["SMS", "WHATSAPP", "PUSH"],
   MEDICINE_FOUND: ["SMS", "WHATSAPP", "PUSH"],
   APPLICATION_UPDATE: ["SMS", "PUSH"],
+  PRESCRIPTION_REJECTED: ["SMS", "WHATSAPP", "PUSH"],
+  ORDER_PREPARING: ["PUSH"],
+  ORDER_READY: ["PUSH"],
+  PAYMENT_RECEIVED: ["SMS", "PUSH"],
+  PAYMENT_FAILED: ["SMS", "PUSH"],
+  REFUND_INITIATED: ["SMS", "PUSH"],
+  REFUND_COMPLETED: ["SMS", "PUSH", "EMAIL"],
+  REFUND_FAILED: ["SMS", "PUSH"],
+  DELIVERY_FAILED: ["SMS", "WHATSAPP", "PUSH"],
+  ORDER_PARTIAL_PROPOSED: ["SMS", "WHATSAPP", "PUSH"],
+  SUPPORT_ALERT: ["PUSH"],
 };
 
 export interface ChannelProvider {
@@ -38,4 +49,14 @@ export function notify(userId: string, event: NotificationEvent, title: string, 
   const user = d.users.find((u) => u.id === userId);
   const to = user?.mobile ?? userId.replace("guest:", "");
   for (const c of channels) void provider.send(c, to, title, body);
+}
+
+/** Everyone who works at a pharmacy (admins and pharmacists). */
+export function notifyPharmacy(pharmacyId: string, event: NotificationEvent, title: string, body: string) {
+  for (const u of db().users.filter((x) => x.partnerId === pharmacyId && (x.role === "PHARMACY_ADMIN" || x.role === "PHARMACIST"))) notify(u.id, event, title, body);
+}
+
+/** Operational alert for the support team (platform admins). */
+export function notifyAdmins(title: string, body: string) {
+  for (const u of db().users.filter((x) => x.role === "SUPER_ADMIN")) notify(u.id, "SUPPORT_ALERT", title, body);
 }

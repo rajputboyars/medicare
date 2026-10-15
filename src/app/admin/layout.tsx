@@ -18,7 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
     { href: "/admin/customers", label: "Users", icon: Users },
     { href: "/admin/pharmacies", label: "Pharmacies", icon: Store, badge: s?.pendingPharmacyApprovals, also: ["/admin/verification"] },
-    { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+    { href: "/admin/orders", label: "Orders", icon: ClipboardList, also: ["/admin/delivery-issues"] },
     { href: "/admin/requests", label: "Medicine Requests", icon: Search, badge: s?.openRequests },
     { href: "/admin/riders", label: "Delivery Partners", icon: Bike, badge: s?.pendingRiderApprovals },
     { href: "/admin/medicine-matches", label: "Medicine Matches", icon: PackageSearch, badge: s?.pendingMatches },

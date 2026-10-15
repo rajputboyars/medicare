@@ -1,3 +1,4 @@
+import { confirmPayment } from "./helpers/pay";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rateLimiter } from "@/lib/rate-limit";
 import { compactText, editDistance, matchToken, normalizeText } from "@/lib/search-normalize";
@@ -9,7 +10,7 @@ import { stockConfidence, confidencePolicy } from "@/server/features/catalog/con
 import { createMedicine, findDuplicates, updateMedicine } from "@/server/features/catalog/medicine-admin.service";
 import { confirmImport, previewImport, resolveMatchReview } from "@/server/features/inventory/import.service";
 import { adjustStock, expiryStateOf, listInventory, pharmacyStats, quickStockUpdate, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
-import { createOrder, expireReservations, PHARMACY_RESPONSE_WINDOW_MS, PAYMENT_WINDOW_MS, confirmPayment, advanceAsPharmacy, cancelOrder } from "@/server/features/orders/orders.service";
+import { createOrder, expireReservations, PHARMACY_RESPONSE_WINDOW_MS, PAYMENT_WINDOW_MS, advanceAsPharmacy, cancelOrder } from "@/server/features/orders/orders.service";
 import { devOutbox } from "@/server/features/auth/otp-provider";
 import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
 import { call, jar, route, signIn } from "./helpers/http";
@@ -740,7 +741,7 @@ describe("reservation expiry and release (server-side)", () => {
   });
   it("paying moves the deadline to the pharmacy; confirming clears it for good; confirmed orders never expire", () => {
     const o = mk("UPI");
-    confirmPayment(customer, o.id, "ref_1");
+    confirmPayment(customer, o.id);
     expireReservations(Date.now() + PAYMENT_WINDOW_MS + 60_000);
     expect(o.status).toBe("PENDING");                                                  // paid: not cancelled for late payment
     advanceAsPharmacy(pharmacist, o.id, "confirm");

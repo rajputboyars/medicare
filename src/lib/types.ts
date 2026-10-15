@@ -447,6 +447,20 @@ export const ORDER_STATUSES = [
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export type DeliveryType = "NORMAL" | "PRIORITY";
+
+export const CANCEL_REASONS = ["CHANGED_MIND", "ORDERED_BY_MISTAKE", "TOO_SLOW", "FOUND_ELSEWHERE", "PAYMENT_ISSUE", "MEDICINE_UNAVAILABLE", "PRESCRIPTION_REJECTED", "CUSTOMER_DECLINED_PARTIAL", "NO_RESPONSE", "DELIVERY_FAILED", "ADDRESS_PROBLEM", "OTHER"] as const;
+export type CancelReasonCode = (typeof CANCEL_REASONS)[number];
+
+export interface PartialFulfillment {
+  status: "PENDING_CUSTOMER" | "ACCEPTED" | "DECLINED" | "EXPIRED";
+  unavailable: { itemId: string; name: string; quantity: number; reason: string }[];
+  /** What the order would cost if the customer continues (computed by the server) */
+  proposed: { subtotal: number; deliveryFee: number; discount: number; total: number };
+  proposedBy: string;
+  proposedAt: string;
+  expiresAt: string;
+  decidedAt?: string;
+}
 export type PaymentMethod = "UPI" | "COD" | "CARD" | "WALLET";
 /** COD orders stay PENDING until the rider hands over the parcel and collects the cash. */
 export type PaymentStatus = "PENDING" | "AUTHORIZED" | "PAID" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
@@ -507,6 +521,8 @@ export interface Order {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   etaMinutes: number;
+  /** The range shown to customers, e.g. [30, 40] */
+  etaRange?: [number, number];
   deliveryPartnerId?: string;
   /** Which inventory batches hold this order's units, and whether they are reserved, consumed or given back. */
   stockAllocations: StockAllocation[];
@@ -515,6 +531,22 @@ export interface Order {
   paymentExpiresAt?: string;
   /** If nobody confirms the order by this time the reservation is released (see expireReservations) */
   reservationExpiresAt?: string;
+  /** Offer code used, kept so totals can be recomputed if items are removed */
+  offerCode?: string;
+  platformFee: number;
+  /** How the delivery fee was worked out: frozen at checkout */
+  feeBreakdown?: { base: number; distanceCharge: number; prioritySurcharge: number; freeDelivery: boolean; distanceKm?: number; rule: "AREA" | "PLATFORM" };
+  /** Structured cancellation record */
+  cancelReasonCode?: CancelReasonCode;
+  cancelledAt?: string;
+  cancelledByUserId?: string;
+  /** A customer's request to cancel once the pharmacy started preparing: staff or support decide */
+  cancellationRequest?: { reasonCode: CancelReasonCode; note?: string; requestedAt: string; status: "PENDING" | "APPROVED" | "REJECTED"; decidedBy?: string; decidedAt?: string; decisionNote?: string };
+  /** The pharmacy cannot supply some items: the customer must say continue or cancel */
+  partialFulfillment?: PartialFulfillment;
+  removedItems?: (OrderItem & { removedReason: string })[];
+  refundStatus: RefundStatus;
+  idempotencyKey?: string;
   settlementId?: string;
   cancelReason?: string;
   cancelledBy?: Role;
@@ -542,11 +574,21 @@ export interface DeliveryPartner {
   verification: VerificationStatus;
   available: boolean;
   location?: GeoPoint;
+  /** Pincodes this rider covers. Missing = no restriction. Set from the approved application. */
+  servicePincodes?: string[];
   joinedAt: string;
 }
 
 export type RiderStatus = "OFFLINE" | "AVAILABLE" | "BUSY" | "SUSPENDED";
-export type DeliveryStatus = "WAITING_FOR_RIDER" | "ASSIGNED" | "AT_PHARMACY" | "PICKED_UP" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED";
+/**
+ * Delivery has its own states, kept in step with the order by domain services (never by the client):
+ *   WAITING_FOR_RIDER → ASSIGNED → AT_PHARMACY → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED
+ *   OUT_FOR_DELIVERY → DELIVERY_FAILED → (retry) OUT_FOR_DELIVERY | RETURNING_TO_PHARMACY → RETURNED_TO_PHARMACY
+ *   CANCELLED: the order was cancelled before the parcel left the pharmacy
+ */
+export type DeliveryStatus = "WAITING_FOR_RIDER" | "ASSIGNED" | "AT_PHARMACY" | "PICKED_UP" | "OUT_FOR_DELIVERY" | "DELIVERY_FAILED" | "RETURNING_TO_PHARMACY" | "RETURNED_TO_PHARMACY" | "DELIVERED" | "CANCELLED";
+export type FailureReason = "CUSTOMER_UNAVAILABLE" | "WRONG_ADDRESS" | "CUSTOMER_REFUSED" | "UNABLE_TO_CONTACT" | "UNSAFE_LOCATION" | "RIDER_ISSUE" | "OTHER";
+export const FAILURE_REASONS: readonly FailureReason[] = ["CUSTOMER_UNAVAILABLE", "WRONG_ADDRESS", "CUSTOMER_REFUSED", "UNABLE_TO_CONTACT", "UNSAFE_LOCATION", "RIDER_ISSUE", "OTHER"];
 
 export interface Delivery {
   id: string;
@@ -556,13 +598,32 @@ export interface Delivery {
   status: DeliveryStatus;
   payout: number;
   cashToCollect: number;
-  /** One-time codes are never stored. We keep a keyed hash, a per-delivery nonce and a failed-attempt counter. */
+  /** One-time codes are never stored. We keep a keyed hash, a nonce and a failed-attempt counter per code. */
   pickupOtpHash: string;
   deliveryOtpHash: string;
+  /** Delivery code nonce (the pickup code has its own, so it can be re-issued without changing the delivery code) */
   otpNonce: string;
+  pickupOtpNonce?: string;
+  /** The pickup code is short-lived; the pharmacy can issue a fresh one */
+  pickupOtpExpiresAt?: string;
   pickupAttempts: number;
   deliveryAttempts: number;
+  /** Which attempt at the customer's door this is (1 = first) */
+  attemptNo?: number;
+  failureReasonCode?: FailureReason;
   failureReason?: string;
+  failedAt?: string;
+  returnStartedAt?: string;
+  returnedAt?: string;
+  /** Cash handed over at the door (COD). Must equal cashToCollect before the delivery can be completed. */
+  cashCollectedAmount?: number;
+  cashCollectedAt?: string;
+  /** Only the LATEST rider position, rounded for the customer view. Overwritten, never accumulated, cleared when the delivery ends. */
+  lastLocation?: { lat: number; lng: number; at: string };
+  /** What the rider earns, split so settlements can show it */
+  earning?: { base: number; distance: number; incentive: number };
+  distanceKm?: number;
+  settlementId?: string;
   createdAt: string;
   acceptedAt?: string;
   atPharmacyAt?: string;
@@ -571,17 +632,79 @@ export interface Delivery {
   deliveredAt?: string;
 }
 
+/**
+ * One payment per order. Which gateway took it, and what the gateway calls it, are recorded here and on the attempts,
+ * never on the order, so the order model does not depend on any provider.
+ */
 export interface Payment {
   id: string;
   orderId: string;
   userId: string;
   method: PaymentMethod;
-  provider: "COD" | "MOCK" | "RAZORPAY";
+  /** "COD", "MOCK", "RAZORPAY"... any registered provider */
+  provider: string;
   amount: number;
+  currency: "INR";
   refundedAmount: number;
   status: PaymentStatus;
-  providerRef?: string;
+  providerOrderId?: string;
+  providerPaymentId?: string;
   paidAt?: string;
+  /** COD only: the cash was handed to the rider */
+  codCollectedAt?: string;
+  codCollectedAmount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Every try to pay is its own row, so a retry never creates a second order or a second payment. */
+export interface PaymentAttempt {
+  id: string;
+  paymentId: string;
+  orderId: string;
+  attemptNumber: number;
+  provider: string;
+  providerOrderId?: string;
+  providerPaymentId?: string;
+  amount: number;
+  status: "CREATED" | "PENDING" | "SUCCEEDED" | "FAILED" | "EXPIRED";
+  failureCode?: string;
+  failureMessage?: string;
+  createdAt: string;
+}
+
+export type RefundStatus = "NOT_REQUIRED" | "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "PARTIAL";
+
+export interface Refund {
+  id: string;
+  paymentId: string;
+  orderId: string;
+  amount: number;
+  /** PENDING → PROCESSING → COMPLETED / FAILED. (PARTIAL describes the ORDER when only part of the payment came back.) */
+  status: Exclude<RefundStatus, "NOT_REQUIRED" | "PARTIAL">;
+  reason: string;
+  kind: "FULL" | "PARTIAL";
+  requestedBy: string;
+  actorRole: Role | "SYSTEM";
+  /** Same key = same refund: asking twice never refunds twice */
+  idempotencyKey: string;
+  providerRefundId?: string;
+  failureMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+/** A remembered answer for a request that carried an Idempotency-Key (or a webhook event id). */
+export interface IdempotencyRecord {
+  id: string;
+  scope: string;
+  key: string;
+  userId?: string;
+  /** Hash of what was asked, so the same key with different content is refused instead of replayed */
+  fingerprint: string;
+  status: number;
+  response: unknown;
   createdAt: string;
 }
 
@@ -595,8 +718,28 @@ export interface Settlement {
   gross: number;
   commission: number;
   net: number;
-  status: "PENDING" | "PROCESSING" | "PAID";
+  /** PENDING (waiting out the hold) → ELIGIBLE → PROCESSING → PAID | FAILED. ON_HOLD can be set while something is disputed. */
+  status: SettlementStatus;
+  /** Pharmacy: medicine revenue, discount allocation, commission, refund adjustment. Rider: base, distance, incentive, adjustment. */
+  components?: SettlementComponents;
+  orderIds?: string[];
+  deliveryIds?: string[];
+  adjustments?: { id: string; amount: number; reason: string; by: string; at: string }[];
+  eligibleAt?: string;
+  paidAt?: string;
+  holdReason?: string;
   createdAt: string;
+}
+export type SettlementStatus = "PENDING" | "ELIGIBLE" | "PROCESSING" | "PAID" | "ON_HOLD" | "FAILED";
+export interface SettlementComponents {
+  medicineRevenue?: number;
+  discountAllocation?: number;
+  platformCommission?: number;
+  refundAdjustment?: number;
+  baseEarning?: number;
+  distanceEarning?: number;
+  incentive?: number;
+  adjustment: number;
 }
 
 export interface MedicineRequest {
@@ -657,7 +800,18 @@ export type NotificationEvent =
   | "ORDER_CANCELLED"
   | "REFILL_REMINDER"
   | "MEDICINE_FOUND"
-  | "APPLICATION_UPDATE";
+  | "APPLICATION_UPDATE"
+  | "PRESCRIPTION_REJECTED"
+  | "ORDER_PREPARING"
+  | "ORDER_READY"
+  | "PAYMENT_RECEIVED"
+  | "PAYMENT_FAILED"
+  | "REFUND_INITIATED"
+  | "REFUND_COMPLETED"
+  | "REFUND_FAILED"
+  | "DELIVERY_FAILED"
+  | "ORDER_PARTIAL_PROPOSED"
+  | "SUPPORT_ALERT";
 export type NotificationChannel = "SMS" | "WHATSAPP" | "PUSH" | "EMAIL";
 
 export interface Notification {
@@ -692,6 +846,19 @@ export interface ServiceArea {
   town?: string;
   pincode?: string;
   status: ServiceAreaStatus;
+  /** Delivery pricing for this area. Missing fields fall back to the platform settings. */
+  feeRule?: DeliveryFeeRule;
+}
+
+export interface DeliveryFeeRule {
+  baseFee: number;
+  includedDistanceKm: number;
+  perKmFee: number;
+  prioritySurcharge: number;
+  minFee: number;
+  maxFee?: number;
+  /** Beyond this distance from the pharmacy we do not deliver */
+  maxServiceRadiusKm: number;
 }
 
 /** Saved medicines: a refill-ready list (cadence, next refill date, reminder flag) per person. */
@@ -727,15 +894,37 @@ export interface PlatformSettings {
   riderPayoutNormal: number;
   riderPayoutPriority: number;
   supportPhone: string;
+  /** Flat platform fee per order (0 by default) */
+  platformFee?: number;
+  /** Largest order we accept as cash on delivery */
+  codMaxAmount?: number;
+  /** Rider earning on top of the base payout, per km beyond the first */
+  riderPerKm?: number;
+  /** How many deliveries one rider may hold at once */
+  maxConcurrentDeliveries?: number;
+  /** Hours after delivery before a settlement becomes ELIGIBLE */
+  settlementHoldHours?: number;
+  /** How much of an offer's discount the platform pays (the rest comes out of the pharmacy's revenue) */
+  discountPlatformSharePercent?: number;
+  /** Minutes a customer has to answer a "some items are unavailable" proposal */
+  partialProposalMinutes?: number;
+  /** Minutes a customer has to pay (and retry) before the reservation is released */
+  paymentWindowMinutes?: number;
+  /** Delivery time estimate ingredients */
+  eta?: { riderAssignMinutes: number; noRiderMinutes: number; reviewMinutes: number; normalKmPerMin: number; priorityKmPerMin: number; minMinutes: number; rangeFactor: number };
 }
 
 export interface AuditLog {
   id: string;
   actorId: string;
-  actorRole: Role;
+  actorRole: Role | "SYSTEM";
   action: string;
+  /** entityType / entityId */
   targetType: string;
   targetId: string;
+  /** State before and after a sensitive change (cancellation, refund, payment, settlement adjustment...) */
+  before?: unknown;
+  after?: unknown;
   meta?: Record<string, unknown>;
   at: string;
 }

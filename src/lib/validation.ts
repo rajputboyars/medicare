@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LANGUAGE_CODES } from "@/i18n/languages";
+import { CANCEL_REASONS, FAILURE_REASONS } from "@/lib/types";
 
 export const mobileSchema = z
   .string()
@@ -233,3 +234,22 @@ export const pharmacyRegistrationSchema = z.object({
   closeTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default("21:00"),
   consent: z.literal(true, { error: "Please confirm the declaration" }),
 });
+
+// ───────────── Order lifecycle ─────────────
+
+/** Structured cancellation. `reason` (free text) is still accepted and filed under OTHER. */
+export const cancelOrderSchema = z.object({
+  reasonCode: z.enum(CANCEL_REASONS).optional(),
+  note: z.string().trim().max(240).optional(),
+  reason: z.string().trim().min(2).max(160).optional(),
+}).strict().refine((b) => b.reasonCode || b.reason, { message: "Please choose a reason", path: ["reasonCode"] });
+export const toCancelInput = (b: z.infer<typeof cancelOrderSchema>) => ({ reasonCode: b.reasonCode ?? ("OTHER" as const), note: b.note ?? b.reason });
+
+export const paymentRetrySchema = z.object({ method: z.enum(["UPI", "COD", "CARD", "WALLET"]).optional() }).strict();
+export const partialDecisionSchema = z.object({ decision: z.enum(["CONTINUE", "CANCEL"]) }).strict();
+export const partialProposalSchema = z.object({ items: z.array(z.object({ itemId: z.string().min(1), reason: z.string().trim().min(2).max(120) }).strict()).min(1).max(40) }).strict();
+export const cancellationDecisionSchema = z.object({ decision: z.enum(["APPROVE", "REJECT"]), note: z.string().trim().max(240).optional() }).strict();
+export const refundSchema = z.object({ amount: z.number().positive().max(1_000_000).optional(), reason: z.string().trim().min(3).max(200) }).strict();
+export const failedDeliverySchema = z.object({ reasonCode: z.enum(FAILURE_REASONS), note: z.string().trim().max(240).optional() }).strict();
+export const locationSchema = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).strict();
+export const completeDeliverySchema = z.object({ otp: z.string().regex(/^\d{4}$/, "Enter the 4-digit code"), cashCollected: z.number().min(0).max(1_000_000).optional() }).strict();

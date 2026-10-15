@@ -1,3 +1,4 @@
+import { confirmPayment } from "./helpers/pay";
 import { beforeEach, describe, expect, it } from "vitest";
 import { availableQuantity, type SessionUser } from "@/lib/types";
 import { TRANSITIONS, canTransition } from "@/lib/order-machine";
@@ -6,7 +7,7 @@ import { MED } from "@/server/seed";
 import { db, resetDb } from "@/server/store";
 import { atomically } from "@/server/tx";
 import { addCartItem, cancelMedicineRequest, createMedicineRequest, expireStaleRequests, getCart, removeCartItem, requestFor, respondToRequest, updateCartItem } from "@/server/features/medicine-requests/requests.service";
-import { advanceAsPharmacy, assignRider, cancelOrder, codeFor, confirmPayment, createOrder, deliveryOf, expireUnpaidOrders, PAYMENT_WINDOW_MS, rejectOrder, transition } from "@/server/features/orders/orders.service";
+import { advanceAsPharmacy, assignRider, cancelOrder, codeFor, createOrder, deliveryOf, expireUnpaidOrders, PAYMENT_WINDOW_MS, rejectOrder, transition } from "@/server/features/orders/orders.service";
 import { acceptDelivery, riderStep, riderStatusOf } from "@/server/features/delivery/delivery.service";
 import { coverageForLocation } from "@/server/features/service-areas/service-areas.service";
 import { quickStockUpdate } from "@/server/features/pharmacy/pharmacy.service";
@@ -124,7 +125,7 @@ describe("inventory reservation", () => {
     const a0 = available();
     const unpaid = createOrder(customer, { ...base, paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 2 }] });
     const paid = createOrder(customer2, { ...base, addressId: "ad_3", paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
-    confirmPayment(customer2, paid.id, "ref_123");
+    confirmPayment(customer2, paid.id);
     expect(available()).toBe(a0 - 3);
     expect(expireUnpaidOrders(Date.now() + PAYMENT_WINDOW_MS - 60_000)).toBe(0); // still inside the window
     expect(expireUnpaidOrders(Date.now() + PAYMENT_WINDOW_MS + 60_000)).toBe(1);
@@ -138,7 +139,7 @@ describe("inventory reservation", () => {
   it("a pharmacy cannot confirm an online order that has not been paid", () => {
     const o = createOrder(customer, { ...base, paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
     expect(() => advanceAsPharmacy(pharmacist, o.id, "confirm")).toThrow(/payment/i);
-    confirmPayment(customer, o.id, "ref_9");
+    confirmPayment(customer, o.id);
     expect(advanceAsPharmacy(pharmacist, o.id, "confirm").status).toBe("CONFIRMED");
   });
 });
@@ -207,7 +208,7 @@ describe("order state machine and status ledger", () => {
     assignRider({ ...pharmacist }, o.id, "dp_4");
     riderStep(rider, o.id, "PICKUP", codeFor(deliveryOf(o)!, "PICKUP"));
     riderStep(rider, o.id, "START");
-    riderStep(rider, o.id, "DELIVER", codeFor(deliveryOf(db().orders.find((x) => x.id === o.id)!) ?? db().deliveries.find((d) => d.orderId === o.id)!, "DELIVERY"));
+    riderStep(rider, o.id, "DELIVER", codeFor(deliveryOf(db().orders.find((x) => x.id === o.id)!) ?? db().deliveries.find((d) => d.orderId === o.id)!, "DELIVERY"), { cashCollected: o.total });
     const h = db().orderStatusHistory.filter((x) => x.orderId === o.id);
     expect(h.map((x) => [x.fromStatus, x.toStatus])).toEqual([
       [undefined, "PENDING"], ["PENDING", "CONFIRMED"], ["CONFIRMED", "PREPARING"], ["PREPARING", "READY_FOR_PICKUP"],
@@ -227,7 +228,7 @@ describe("order state machine and status ledger", () => {
   });
   it("a cancelled order refunds a paid payment and fails an unpaid one", () => {
     const paid = createOrder(customer, { ...base, paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
-    confirmPayment(customer, paid.id, "ref_1");
+    confirmPayment(customer, paid.id);
     cancelOrder(customer, paid.id, "no longer needed");
     expect(db().payments.find((p) => p.orderId === paid.id)).toMatchObject({ status: "REFUNDED", refundedAmount: paid.total });
     const cod = otc();
@@ -267,12 +268,12 @@ describe("rider statuses and delivery statuses", () => {
     db().deliveryPartners.find((x) => x.id === "dp_4")!.verification = "SUSPENDED";
     expect(() => acceptDelivery(rider, o.id)).toThrow();
   });
-  it("cancelling marks an open delivery FAILED with the reason", () => {
+  it("cancelling marks an open delivery CANCELLED with the reason", () => {
     const o = otc();
     advanceAsPharmacy(pharmacist, o.id, "confirm"); advanceAsPharmacy(pharmacist, o.id, "prepare"); advanceAsPharmacy(pharmacist, o.id, "ready");
-    cancelOrder(customer, o.id, "Not needed");
+    rejectOrder(pharmacist, o.id, "Not needed");
     const dl = db().deliveries.find((d) => d.orderId === o.id)!;
-    expect(dl).toMatchObject({ status: "FAILED", failureReason: "Not needed" });
+    expect(dl).toMatchObject({ status: "CANCELLED", failureReason: "Not needed" });
   });
 });
 
@@ -407,7 +408,9 @@ describe("payments", () => {
     acceptDelivery(rider, o.id);
     const dl = deliveryOf(o)!;
     riderStep(rider, o.id, "PICKUP", codeFor(dl, "PICKUP")); riderStep(rider, o.id, "START");
-    riderStep(rider, o.id, "DELIVER", codeFor(db().deliveries.find((d) => d.orderId === o.id)!, "DELIVERY"));
+    expect(() => riderStep(rider, o.id, "DELIVER", codeFor(db().deliveries.find((d) => d.orderId === o.id)!, "DELIVERY"))).toThrow(/Collect/); // no cash, no completion
+    expect(o.paymentStatus).toBe("PENDING");
+    riderStep(rider, o.id, "DELIVER", codeFor(db().deliveries.find((d) => d.orderId === o.id)!, "DELIVERY"), { cashCollected: o.total });
     expect(o.paymentStatus).toBe("PAID");
     expect(pay()).toMatchObject({ status: "PAID" });
     expect(pay().paidAt).toBeTruthy();

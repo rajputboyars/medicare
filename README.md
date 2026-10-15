@@ -61,7 +61,7 @@ src/app/admin        Dashboard · Customers · Pharmacies · Pharmacy Verificati
 src/app/delivery     Rider PWA: Deliveries (online switch, available, accept, pickup/delivery OTP, navigate, call) · History · Earnings
 src/app/api/**       Thin route handlers: auth → zod validation → service
 src/proxy.ts         Route-level RBAC
-src/server/features  Business rules by feature: accounts, orders, inventory, prescriptions, medicine-requests, delivery, payments, pharmacy, service-areas, admin  (see docs/backend-architecture.md)
+src/server/features  Business rules by feature: accounts, orders, inventory, prescriptions, medicine-requests, delivery, payments, pharmacy, service-areas, admin  (see docs/backend-architecture.md and docs/order-lifecycle.md)
 src/server/core      Guards, pagination and response helpers shared by every API route
 src/server/          store (working set), persistence (MongoDB write-back), tx (all-or-nothing work), http (route helpers), seed
 src/models/index.ts  Mongoose models + indexes

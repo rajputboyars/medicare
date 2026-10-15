@@ -283,8 +283,9 @@ describe("delivery: OTP protection and rider privacy", () => {
     expect((await call((await route("rider/deliveries/[id]/complete")).POST, "POST", "/x", { params: { id }, body: { otp: codeFor(dl, "DELIVERY") } })).status).toBe(409); // not started yet
     await call((await route("rider/deliveries/[id]/out-for-delivery")).POST, "POST", "/x", { params: { id } });
     expect(dl.status).toBe("OUT_FOR_DELIVERY");
-    expect((await call((await route("rider/deliveries/[id]/complete")).POST, "POST", "/x", { params: { id }, body: { otp: codeFor(dl, "PICKUP") } })).status).toBe(400); // the other code
-    expect((await call((await route("rider/deliveries/[id]/complete")).POST, "POST", "/x", { params: { id }, body: { otp: codeFor(dl, "DELIVERY") } })).status).toBe(200);
+    expect((await call((await route("rider/deliveries/[id]/complete")).POST, "POST", "/x", { params: { id }, body: { otp: codeFor(dl, "PICKUP"), cashCollected: o.total } })).status).toBe(400); // the other code
+    expect((await call((await route("rider/deliveries/[id]/complete")).POST, "POST", "/x", { params: { id }, body: { otp: codeFor(dl, "DELIVERY") } })).status).toBe(400); // cash must be recorded first
+    expect((await call((await route("rider/deliveries/[id]/complete")).POST, "POST", "/x", { params: { id }, body: { otp: codeFor(dl, "DELIVERY"), cashCollected: o.total } })).status).toBe(200);
     expect(o.status).toBe("DELIVERED");
     expect(o.paymentStatus).toBe("PAID");
     expect(dl.status).toBe("DELIVERED");

@@ -1,10 +1,13 @@
+import { confirmPayment } from "./helpers/pay";
+import { decideCancellation } from "@/server/features/orders/orders.service";
+import { promoteEligibleSettlements } from "@/server/features/settlements/settlements.service";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { SessionUser } from "@/lib/types";
 import { MED } from "@/server/seed";
 import { availableQuantity } from "@/lib/types";
 import { db, resetDb, settings } from "@/server/store";
 import { offersFor, pincodeCenter, searchMedicines } from "@/server/features/medicines/finder.service";
-import { codeFor, deliveryOf, advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, confirmPayment, createOrder, getOrderFor, pharmacyOrderView, quoteOrder, rejectOrder, reviewOrderPrescription, reviewPrescription, userSafeOrder } from "@/server/features/orders/orders.service";
+import { codeFor, deliveryOf, advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, createOrder, getOrderFor, pharmacyOrderView, quoteOrder, rejectOrder, reviewOrderPrescription, reviewPrescription, userSafeOrder } from "@/server/features/orders/orders.service";
 import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory, earningsSummary, riderStep, riderSummary, setAvailability } from "@/server/features/delivery/delivery.service";
 import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
 import { customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
@@ -39,7 +42,7 @@ function readyOrder(qty = 2) {
   return o;
 }
 
-beforeEach(() => resetDb());
+beforeEach(() => { resetDb(); settings().maxConcurrentDeliveries = 3; }); // the shipped default is ONE delivery at a time; the older rider tests below use three
 
 describe("seed data", () => {
   it("matches the V1 brief", () => {
@@ -211,8 +214,8 @@ describe("order state machine end to end", () => {
     expect(o.status).toBe("PICKED_UP");
     riderStep(rider1, o.id, "START");
     expect(o.status).toBe("OUT_FOR_DELIVERY");
-    expect(() => riderStep(rider1, o.id, "DELIVER", "0000")).toThrow(/Delivery code/);
-    riderStep(rider1, o.id, "DELIVER", dcode(o));
+    expect(() => riderStep(rider1, o.id, "DELIVER", "0000", { cashCollected: o.total })).toThrow(/Delivery code/);
+    riderStep(rider1, o.id, "DELIVER", dcode(o), { cashCollected: o.total });
     expect(o.status).toBe("DELIVERED");
     expect(o.paymentStatus).toBe("PAID");
     expect(stockOf("ph_1", MED.PARACETAMOL)).toBe(before - 2);
@@ -232,7 +235,7 @@ describe("order state machine end to end", () => {
   it("customer can cancel until pickup; stock returns and paid orders are refunded", () => {
     const before = stockOf("ph_1", MED.PARACETAMOL);
     const o = createOrder(customer, { ...base, paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 2 }] });
-    confirmPayment(customer, o.id, "demo_1");
+    confirmPayment(customer, o.id);
     advanceAsPharmacy(pharmacist, o.id, "confirm");
     expect(stockOf("ph_1", MED.PARACETAMOL)).toBe(before - 2);
     cancelOrder(customer, o.id, "Changed my mind");
@@ -252,9 +255,12 @@ describe("order state machine end to end", () => {
   it("cancelling after a rider accepted releases the rider", () => {
     const o = readyOrder();
     acceptDelivery(rider1, o.id);
-    cancelOrder(customer, o.id, "Not needed");
+    cancelOrder(customer, o.id, "Not needed"); // packed already: the customer asks, the pharmacy answers
+    expect(o.status).toBe("RIDER_ASSIGNED");
+    decideCancellation(pharmacist, o.id, "APPROVE");
+    expect(o.status).toBe("CANCELLED");
     expect(o.deliveryPartnerId).toBeUndefined();
-    expect(db().deliveries.find((x) => x.orderId === o.id)!.status).toBe("FAILED");
+    expect(db().deliveries.find((x) => x.orderId === o.id)!.status).toBe("CANCELLED");
     expect(riderSummary(rider1).activeJobs).toBe(1); // only the seeded job remains
   });
 
@@ -303,8 +309,8 @@ describe("order state machine end to end", () => {
     expect(cod.paymentStatus).toBe("PENDING");
     const upi = createOrder(customer, { ...base, paymentMethod: "UPI", items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] });
     expect(upi.paymentStatus).toBe("PENDING");
-    expect(() => confirmPayment(customer, cod.id, "x_123")).toThrow(/Cash on Delivery/);
-    expect(confirmPayment(customer, upi.id, "demo_ref_1").paymentStatus).toBe("PAID");
+    expect(() => confirmPayment(customer, cod.id)).toThrow(/Cash on Delivery/);
+    expect(confirmPayment(customer, upi.id).paymentStatus).toBe("PAID");
     expect(db().payments.find((p) => p.orderId === upi.id)!.provider).toBe("MOCK");
   });
 });
@@ -365,7 +371,7 @@ describe("rider workflow and privacy", () => {
     acceptDelivery(rider4, o.id);
     riderStep(rider4, o.id, "PICKUP", pickup(o));
     riderStep(rider4, o.id, "START");
-    riderStep(rider4, o.id, "DELIVER", dcode(o));
+    riderStep(rider4, o.id, "DELIVER", dcode(o), { cashCollected: o.total });
     expect(deliveryHistory(rider4)[0]).toMatchObject({ orderCode: o.code, payout: settings().riderPayoutNormal });
     const e = earningsSummary(rider4);
     expect(e.today).toEqual({ amount: settings().riderPayoutNormal, count: 1 });
@@ -474,7 +480,7 @@ describe("admin", () => {
   });
   it("settlements: generated once per delivered order with commission, then progress forward only", () => {
     const o = readyOrder(); acceptDelivery(rider4, o.id);
-    riderStep(rider4, o.id, "PICKUP", pickup(o)); riderStep(rider4, o.id, "START"); riderStep(rider4, o.id, "DELIVER", dcode(o));
+    riderStep(rider4, o.id, "PICKUP", pickup(o)); riderStep(rider4, o.id, "START"); riderStep(rider4, o.id, "DELIVER", dcode(o), { cashCollected: o.total });
     const created = generateSettlements(admin);
     const s = created.find((x) => x.partnerId === "ph_1")!;
     expect(s.orderCount).toBeGreaterThanOrEqual(1);
@@ -482,9 +488,12 @@ describe("admin", () => {
     expect(s.net).toBe(s.gross - s.commission);
     expect(o.settlementId).toBe(s.id);
     expect(generateSettlements(admin).filter((x) => x.partnerId === "ph_1")).toHaveLength(0);
+    expect(s.status).toBe("PENDING"); // waiting out the hold period
+    expect(() => setSettlementStatus(admin, s.id, "PROCESSING")).toThrow(/hold period/);
+    promoteEligibleSettlements(Date.now() + 25 * 3600_000);
     setSettlementStatus(admin, s.id, "PROCESSING");
     setSettlementStatus(admin, s.id, "PAID");
-    expect(() => setSettlementStatus(admin, s.id, "PENDING")).toThrow(/backwards/);
+    expect(() => setSettlementStatus(admin, s.id, "PENDING")).toThrow(/paid/);
   });
   it("tables never leak OTPs, file keys or prescription contents", () => {
     const json = JSON.stringify([adminList("orders"), adminList("customers"), adminList("requests"), adminList("complaints")]);

@@ -47,7 +47,7 @@ export const User = define("User", {
   partnerId: S,
   language: { type: S, default: "en" }, // validated against the language registry in src/i18n
   pincode: S, district: S,
-  favoritePharmacyIds: [S],
+  favoritePharmacyIds: { type: [S], default: undefined },
   preferences: new Schema({ largeText: Boolean, largeControls: Boolean, simplified: Boolean, highContrast: Boolean }, { _id: false }),
   consent: new Schema({ healthData: Boolean, marketing: Boolean, acceptedAt: Date }, { _id: false }),
   status: { type: S, enum: ["ACTIVE", "SUSPENDED"], default: "ACTIVE" },
@@ -184,10 +184,14 @@ export const Order = define("Order", {
   status: { type: S, enum: [...ORDER_STATUSES], required: true },
   deliveryType: { type: S, enum: ["NORMAL", "PRIORITY"] },
   subtotal: Number, deliveryFee: Number, discount: Number, total: Number,
-  paymentMethod: payMethod, paymentStatus: payStatus, etaMinutes: Number,
+  paymentMethod: payMethod, paymentStatus: payStatus, etaMinutes: Number, etaRange: { type: [Number], default: undefined },
   stockAllocations: [new Schema({ inventoryId: S, quantity: Number }, { _id: false })],
   stockState: { type: S, enum: ["NONE", "RESERVED", "CONSUMED", "RELEASED"], default: "NONE" },
   paymentExpiresAt: Date, reservationExpiresAt: Date,
+  offerCode: S, platformFee: { type: Number, default: 0 }, feeBreakdown: Schema.Types.Mixed,
+  cancelReasonCode: S, cancelledAt: Date, cancelledByUserId: S, cancellationRequest: Schema.Types.Mixed,
+  partialFulfillment: Schema.Types.Mixed, removedItems: Schema.Types.Mixed,
+  refundStatus: { type: S, enum: ["NOT_REQUIRED", "PENDING", "PROCESSING", "COMPLETED", "FAILED", "PARTIAL"], default: "NOT_REQUIRED" }, idempotencyKey: S,
   assisted: new Schema({ pharmacyId: S, staffUserId: S, consentId: S }, { _id: false }),
   deliveryPartnerId: S, settlementId: S, cancelReason: S, cancelledBy: S, isRepeat: Boolean,
   createdAt: { type: Date, default: Date.now },
@@ -200,6 +204,7 @@ export const Order = define("Order", {
   s.index({ createdAt: -1 });
   s.index({ paymentExpiresAt: 1 }, { sparse: true });
   s.index({ reservationExpiresAt: 1 }, { sparse: true });
+  s.index({ userId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } }); // a retried checkout can never create a second order
 });
 
 /** Append-only ledger of every order transition (who moved it, from what, to what, and why). */
@@ -221,35 +226,43 @@ export const OrderItem = define("OrderItem", {
 
 export const DeliveryPartner = define("DeliveryPartner", {
   userId: S, name: S, mobile: S, vehicle: S, verification, available: { type: Boolean, default: false },
-  location: point, geo: geoJson, joinedAt: Date,
+  location: point, geo: geoJson, joinedAt: Date, servicePincodes: { type: [S], default: undefined },
 }, (s) => { s.index({ verification: 1, available: 1 }); s.index({ geo: "2dsphere" }); s.index({ userId: 1 }); });
 
 export const Delivery = define("Delivery", {
   orderId: { type: S, required: true }, partnerId: S,
-  status: { type: S, enum: ["WAITING_FOR_RIDER", "ASSIGNED", "AT_PHARMACY", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED"], default: "WAITING_FOR_RIDER" },
+  status: { type: S, enum: ["WAITING_FOR_RIDER", "ASSIGNED", "AT_PHARMACY", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERY_FAILED", "RETURNING_TO_PHARMACY", "RETURNED_TO_PHARMACY", "DELIVERED", "CANCELLED"], default: "WAITING_FOR_RIDER" },
   payout: Number, cashToCollect: Number,
   // One-time codes are never stored: only a keyed hash, a nonce and a failed-attempt counter (all hidden from default queries).
   pickupOtpHash: { type: S, select: false }, deliveryOtpHash: { type: S, select: false }, otpNonce: { type: S, select: false },
-  pickupAttempts: { type: Number, default: 0 }, deliveryAttempts: { type: Number, default: 0 },
-  failureReason: S, createdAt: Date, acceptedAt: Date, atPharmacyAt: Date, pickedUpAt: Date, outForDeliveryAt: Date, deliveredAt: Date,
+  pickupOtpNonce: { type: S, select: false }, pickupOtpExpiresAt: Date,
+  pickupAttempts: { type: Number, default: 0 }, deliveryAttempts: { type: Number, default: 0 }, attemptNo: Number,
+  failureReasonCode: S, failureReason: S, failedAt: Date, returnStartedAt: Date, returnedAt: Date,
+  cashCollectedAmount: Number, cashCollectedAt: Date,
+  lastLocation: new Schema({ lat: Number, lng: Number, at: Date }, { _id: false }),
+  earning: Schema.Types.Mixed, distanceKm: Number, settlementId: S,
+  createdAt: Date, acceptedAt: Date, atPharmacyAt: Date, pickedUpAt: Date, outForDeliveryAt: Date, deliveredAt: Date,
 }, (s) => { s.index({ orderId: 1 }); s.index({ partnerId: 1, status: 1, deliveredAt: -1 }); s.index({ status: 1, createdAt: 1 }); });
 
 export const Payment = define("Payment", {
   orderId: { type: S, required: true }, userId: S, method: payMethod,
-  provider: { type: S, enum: ["COD", "MOCK", "RAZORPAY"] }, amount: Number, refundedAmount: { type: Number, default: 0 }, status: payStatus, providerRef: S, paidAt: Date,
-  createdAt: { type: Date, default: Date.now },
-}, (s) => { s.index({ orderId: 1 }, { unique: true }); s.index({ userId: 1 }); s.index({ status: 1, createdAt: -1 }); });
+  provider: S, amount: Number, currency: { type: S, default: "INR" }, refundedAmount: { type: Number, default: 0 }, status: payStatus,
+  providerOrderId: S, providerPaymentId: S, paidAt: Date, codCollectedAt: Date, codCollectedAmount: Number,
+  createdAt: { type: Date, default: Date.now }, updatedAt: { type: Date, default: Date.now },
+}, (s) => { s.index({ providerOrderId: 1 }, { sparse: true }); s.index({ providerPaymentId: 1 }, { sparse: true }); s.index({ orderId: 1 }, { unique: true }); s.index({ userId: 1 }); s.index({ status: 1, createdAt: -1 }); });
 
 export const Settlement = define("Settlement", {
   partnerType: { type: S, enum: ["PHARMACY", "DELIVERY"] }, partnerId: { type: S, required: true },
   periodStart: Date, periodEnd: Date, orderCount: Number, gross: Number, commission: Number, net: Number,
-  status: { type: S, enum: ["PENDING", "PROCESSING", "PAID"], default: "PENDING" },
+  status: { type: S, enum: ["PENDING", "ELIGIBLE", "PROCESSING", "PAID", "ON_HOLD", "FAILED"], default: "PENDING" },
+  components: Schema.Types.Mixed, orderIds: { type: [S], default: undefined }, deliveryIds: { type: [S], default: undefined }, adjustments: Schema.Types.Mixed, eligibleAt: Date, paidAt: Date, holdReason: S,
   createdAt: { type: Date, default: Date.now },
 }, (s) => { s.index({ partnerId: 1, status: 1 }); s.index({ status: 1, createdAt: -1 }); });
 
 export const ServiceArea = define("ServiceArea", {
   level: { type: S, enum: ["STATE", "DISTRICT", "TOWN", "PINCODE"] }, name: S, state: S, district: S, town: S, pincode: S,
   status: { type: S, enum: ["ACTIVE", "COMING_SOON", "DISABLED"], default: "COMING_SOON" },
+  feeRule: Schema.Types.Mixed,
 }, (s) => { s.index({ level: 1, name: 1 }, { unique: true }); s.index({ pincode: 1 }); s.index({ status: 1 }); });
 
 export const Notification = define("Notification", {
@@ -319,6 +332,26 @@ export const AnalyticsEvent = define("AnalyticsEvent", {
   name: { type: S, required: true }, userId: S, anonId: S, props: Schema.Types.Mixed, at: { type: Date, default: Date.now },
 }, (s) => { s.index({ name: 1, at: -1 }); s.index({ at: -1 }); });
 
+// ── Payments: attempts, refunds, idempotency ──
+
+export const PaymentAttempt = define("PaymentAttempt", {
+  paymentId: { type: S, required: true }, orderId: { type: S, required: true }, attemptNumber: Number, provider: S,
+  providerOrderId: S, providerPaymentId: S, amount: Number, status: { type: S, enum: ["CREATED", "PENDING", "SUCCEEDED", "FAILED", "EXPIRED"] },
+  failureCode: S, failureMessage: S, createdAt: { type: Date, default: Date.now },
+}, (s) => { s.index({ paymentId: 1, attemptNumber: 1 }, { unique: true }); s.index({ providerOrderId: 1 }, { sparse: true }); });
+
+export const Refund = define("Refund", {
+  paymentId: { type: S, required: true }, orderId: { type: S, required: true }, amount: Number,
+  status: { type: S, enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] }, reason: S, kind: { type: S, enum: ["FULL", "PARTIAL"] },
+  requestedBy: S, actorRole: S, idempotencyKey: { type: S, required: true }, providerRefundId: S, failureMessage: S,
+  createdAt: Date, updatedAt: Date, completedAt: Date,
+}, (s) => { s.index({ paymentId: 1, idempotencyKey: 1 }, { unique: true }); s.index({ orderId: 1 }); s.index({ providerRefundId: 1 }, { sparse: true }); });
+
+/** Remembered answers for retried requests and processed webhook events. Expires after a day. */
+export const IdempotencyRecord = define("IdempotencyRecord", {
+  scope: { type: S, required: true }, key: { type: S, required: true }, userId: S, fingerprint: S, status: Number, response: Schema.Types.Mixed, createdAt: { type: Date, default: Date.now },
+}, (s) => { s.index({ scope: 1, key: 1, userId: 1 }, { unique: true }); s.index({ createdAt: 1 }, { expireAfterSeconds: 2 * 86400 }); });
+
 // ── Catalogue operations ──
 
 export const SearchHistory = define("SearchHistory", { userId: { type: S, required: true }, query: { type: S, required: true }, at: { type: Date, default: Date.now } },
@@ -358,17 +391,19 @@ export const Offer = define("Offer", { title: S, description: S, code: S, percen
 export const PlatformSettingsModel = define("PlatformSettings", {
   commissionPercent: Number, normalDeliveryFee: Number, priorityDeliveryFee: Number, freeDeliveryAbove: Number,
   riderPayoutNormal: Number, riderPayoutPriority: Number, supportPhone: S,
+  platformFee: Number, codMaxAmount: Number, riderPerKm: Number, maxConcurrentDeliveries: Number, settlementHoldHours: Number,
+  discountPlatformSharePercent: Number, partialProposalMinutes: Number, paymentWindowMinutes: Number, eta: Schema.Types.Mixed,
 });
 
 export const AuditLog = define("AuditLog", {
-  actorId: S, actorRole: S, action: S, targetType: S, targetId: S, meta: Schema.Types.Mixed, at: { type: Date, default: Date.now },
+  actorId: S, actorRole: S, action: S, targetType: S, targetId: S, meta: Schema.Types.Mixed, before: Schema.Types.Mixed, after: Schema.Types.Mixed, at: { type: Date, default: Date.now },
 }, (s) => { s.index({ at: -1 }); s.index({ actorId: 1, at: -1 }); s.index({ action: 1 }); });
 
 /** Private prescription files (V1 stores bytes in MongoDB; swap for object storage in production). */
 export const StoredFile = define("StoredFile", { bytes: { type: Buffer, select: true }, mimeType: S, ownerId: S });
 
 export const ALL_MODELS = [
-  SearchHistory, InventoryImport, MedicineMatchReview, Session, OtpChallenge, ServiceAreaInterest, PartnerApplication, PartnerDocument, CallbackRequest, AssistedConsent, AnalyticsEvent,
+  PaymentAttempt, Refund, IdempotencyRecord, SearchHistory, InventoryImport, MedicineMatchReview, Session, OtpChallenge, ServiceAreaInterest, PartnerApplication, PartnerDocument, CallbackRequest, AssistedConsent, AnalyticsEvent,
   User, FamilyMember, Address, Medicine, Pharmacy, PharmacyInventory, Prescription, MedicineRequest, MedicineRequestResponse, Cart, Order, OrderItem, OrderStatusHistory,
   DeliveryPartner, Delivery, Payment, Settlement, ServiceArea, Notification, SupportTicket, SavedMedicine, Review, Offer, PlatformSettingsModel, AuditLog, StoredFile,
 ];

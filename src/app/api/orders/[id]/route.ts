@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { cancelOrderSchema, toCancelInput } from "@/lib/validation";
 import { badRequest, handle, parseBody, requireUser } from "@/server/http";
-import { attachPrescription, cancelOrder, confirmPayment, getOrderFor, userSafeOrder } from "@/server/features/orders/orders.service";
+import { attachPrescription, cancelOrder, getOrderFor, userSafeOrder } from "@/server/features/orders/orders.service";
 import { repeatOrder, saveFromOrder } from "@/server/features/medicine-requests/requests.service";
 import { db, uid } from "@/server/store";
 
@@ -11,9 +12,12 @@ export const GET = handle(async (_req: Request, ctx: Ctx) => {
   return userSafeOrder(getOrderFor(u, (await ctx.params).id), u);
 });
 
+/**
+ * Payment is NOT an action here: an online payment becomes PAID only when the gateway's signed webhook says so
+ * (POST /api/payments/webhook). The browser can start, retry or abandon a payment but can never declare it paid.
+ */
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("cancel"), reason: z.string().trim().min(2).max(160) }),
-  z.object({ action: z.literal("pay"), providerRef: z.string().trim().min(3).max(60) }),
+  z.object({ action: z.literal("cancel"), reasonCode: z.enum(["CHANGED_MIND", "ORDERED_BY_MISTAKE", "TOO_SLOW", "FOUND_ELSEWHERE", "PAYMENT_ISSUE", "OTHER"]).optional(), note: z.string().trim().max(240).optional(), reason: z.string().trim().min(2).max(160).optional() }),
   z.object({ action: z.literal("repeat"), paymentMethod: z.enum(["UPI", "COD", "CARD", "WALLET"]).optional() }),
   z.object({ action: z.literal("attach_prescription"), prescriptionId: z.string().min(1) }),
   z.object({ action: z.literal("save_medicines"), everyDays: z.number().int().min(7).max(90).default(30) }),
@@ -25,8 +29,7 @@ export const POST = handle(async (req: Request, ctx: Ctx) => {
   const { id } = await ctx.params;
   const b = await parseBody(req, actionSchema);
   switch (b.action) {
-    case "cancel": return userSafeOrder(cancelOrder(u, id, b.reason), u);
-    case "pay": return userSafeOrder(confirmPayment(u, id, b.providerRef), u);
+    case "cancel": return userSafeOrder(cancelOrder(u, id, toCancelInput(cancelOrderSchema.parse({ reasonCode: b.reasonCode, note: b.note, reason: b.reason }))), u);
     case "repeat": return userSafeOrder(repeatOrder(u, id, b.paymentMethod), u);
     case "attach_prescription": return userSafeOrder(attachPrescription(u, id, b.prescriptionId), u);
     case "save_medicines": return saveFromOrder(u, id, b.everyDays);

@@ -1,13 +1,14 @@
 import { z } from "zod";
-import { deliveryOtpSchema } from "@/lib/validation";
+import { deliveryOtpSchema, failedDeliverySchema } from "@/lib/validation";
 import { handle, limit, parseBody, requireUser } from "@/server/http";
-import { acceptDelivery, riderStep } from "@/server/features/delivery/delivery.service";
+import { acceptDelivery, reportFailedDelivery, riderStep } from "@/server/features/delivery/delivery.service";
 
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("accept") }),
   z.object({ action: z.literal("pickup"), otp: deliveryOtpSchema.shape.otp }),
   z.object({ action: z.literal("start") }),
-  z.object({ action: z.literal("deliver"), otp: deliveryOtpSchema.shape.otp }),
+  z.object({ action: z.literal("deliver"), otp: deliveryOtpSchema.shape.otp, cashCollected: z.number().min(0).max(1_000_000).optional() }),
+  z.object({ action: z.literal("failed"), reasonCode: failedDeliverySchema.shape.reasonCode, note: failedDeliverySchema.shape.note }),
   z.object({ action: z.literal("drop") }),
 ]);
 
@@ -20,7 +21,8 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     case "accept": return acceptDelivery(u, id);
     case "pickup": return riderStep(u, id, "PICKUP", b.otp);
     case "start": return riderStep(u, id, "START");
-    case "deliver": return riderStep(u, id, "DELIVER", b.otp);
+    case "deliver": return riderStep(u, id, "DELIVER", b.otp, { cashCollected: b.cashCollected });
+    case "failed": return reportFailedDelivery(u, id, b.reasonCode, b.note);
     case "drop": return riderStep(u, id, "DROP");
   }
 });

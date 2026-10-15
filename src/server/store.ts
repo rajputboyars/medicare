@@ -24,7 +24,7 @@ export function resetDb(): Db {
 
 export function settings(): PlatformSettings {
   const d = db();
-  if (!d.settings.length) d.settings.push({ ...DEFAULT_SETTINGS });
+  if (!d.settings.length) d.settings.push(structuredClone(DEFAULT_SETTINGS));
   return d.settings[0];
 }
 
@@ -47,8 +47,8 @@ export function orderCode(): string {
 }
 
 /** Audit log for sensitive actions (prescription review, order decisions, verification, settings). */
-export function audit(actor: { id: string; role: Role }, action: string, targetType: string, targetId: string, meta?: Record<string, unknown>) {
+export function audit(actor: { id: string; role: Role | "SYSTEM" }, action: string, targetType: string, targetId: string, meta?: Record<string, unknown>, change?: { before?: unknown; after?: unknown }) {
   const d = db();
-  d.audit.unshift({ id: uid("aud"), actorId: actor.id, actorRole: actor.role, action, targetType, targetId, meta, at: new Date().toISOString() });
+  d.audit.unshift({ id: uid("aud"), actorId: actor.id, actorRole: actor.role, action, targetType, targetId, meta, before: change?.before, after: change?.after, at: new Date().toISOString() });
   if (d.audit.length > 2000) d.audit.length = 2000;
 }

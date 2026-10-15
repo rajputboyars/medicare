@@ -57,6 +57,9 @@ const SINKS: Sink[] = [
   simple("orderStatusHistory", M.OrderStatusHistory, "orderStatusHistory"),
   simple("sessions", M.Session, "sessions"),
   simple("searchHistory", M.SearchHistory, "searchHistory"),
+  simple("paymentAttempts", M.PaymentAttempt, "paymentAttempts"),
+  simple("refunds", M.Refund, "refunds"),
+  simple("idempotencyRecords", M.IdempotencyRecord, "idempotencyRecords"),
   simple("inventoryImports", M.InventoryImport, "inventoryImports"),
   simple("matchReviews", M.MedicineMatchReview, "matchReviews"),
   simple("otpChallenges", M.OtpChallenge, "otpChallenges"),
@@ -245,7 +248,8 @@ export async function initMongoStore(): Promise<void> {
     // Databases written before the reservation/OTP-hash redesign cannot be read safely: stop with a clear instruction.
     const legacy = (await M.PharmacyInventory.collection.findOne({ stockQuantity: { $exists: false } }))
       ?? (await M.ServiceArea.collection.findOne({ launchSignups: { $exists: true } }))
-      ?? (await M.Medicine.collection.findOne({ normalizedName: { $exists: false } }));
+      ?? (await M.Medicine.collection.findOne({ normalizedName: { $exists: false } }))
+      ?? (await M.Payment.collection.findOne({ currency: { $exists: false } }));
     if (legacy) throw new Error("This database was created by an older version of DawaDost. Run \"npm run db:reset\" to rebuild the demo data.");
     const loaded = await loadAll();
     setDb(loaded);

@@ -2,12 +2,13 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
-import { translate, type Key } from "@/i18n";
+import { translate, type Key, type Lang } from "@/i18n";
 import { usePrefs } from "./store";
-import type { Role } from "./types";
+import type { Role, UserPreferences } from "./types";
 
 export interface Me {
-  id: string; name: string; mobile: string; email?: string; role: Role; partnerId?: string; language: "en" | "hi";
+  id: string; name: string; mobile: string; email?: string; role: Role; partnerId?: string; language: Lang;
+  pincode?: string; district?: string; preferences: UserPreferences; mfaEnabled: boolean;
   consent: { healthData: boolean; marketing: boolean };
 }
 

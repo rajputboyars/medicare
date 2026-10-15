@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
 import type * as T from "@/lib/types";
+import { DEFAULT_PREFERENCES } from "@/lib/types";
+import { buildMedicine } from "@/lib/medicine-fields";
 import { deriveOtp, hashOtp, newNonce } from "@/server/features/delivery/otp";
 
 /**
@@ -15,10 +17,21 @@ export interface Db {
   medicines: T.Medicine[];
   pharmacies: T.Pharmacy[];
   inventory: T.PharmacyInventory[];
+  searchHistory: T.SearchHistoryEntry[];
+  inventoryImports: T.InventoryImport[];
+  matchReviews: T.MedicineMatchReview[];
   prescriptions: T.Prescription[];
   carts: T.Cart[];
   orders: T.Order[];
   orderStatusHistory: T.OrderStatusHistory[];
+  sessions: T.Session[];
+  otpChallenges: T.OtpChallenge[];
+  serviceAreaInterests: T.ServiceAreaInterest[];
+  partnerApplications: T.PartnerApplication[];
+  partnerDocuments: T.PartnerDocument[];
+  callbackRequests: T.CallbackRequest[];
+  assistedConsents: T.AssistedConsent[];
+  analytics: T.AnalyticsRecord[];
   deliveryPartners: T.DeliveryPartner[];
   deliveries: T.Delivery[];
   payments: T.Payment[];
@@ -50,28 +63,40 @@ export const DEFAULT_SETTINGS: T.PlatformSettings & { id: string } = {
 const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString();
 const daysAhead = (n: number) => new Date(Date.now() + n * 86400_000).toISOString();
 
-type M = Omit<T.Medicine, "id">;
+type M = Pick<T.Medicine, "name" | "genericName" | "brand" | "strength" | "dosageForm" | "packSize" | "category" | "mrp" | "prescriptionRequired" | "restricted">;
+
+/** Makers and aliases for the demo catalogue (a real catalogue would come from a licensed drug database). */
+const MAKERS: Record<string, string> = {
+  Glycomet: "USV Ltd", Amaryl: "Sanofi India", Telma: "Glenmark Pharmaceuticals", Amlong: "Micro Labs", Thyronorm: "Abbott India", Asthalin: "Cipla", Dolo: "Micro Labs",
+  Crocin: "GSK Consumer Healthcare", Zyrtec: "GSK Consumer Healthcare", Brufen: "Abbott India", Becosules: "Pfizer", Shelcal: "Torrent Pharmaceuticals",
+};
+const EXTRA: Record<string, { searchAliases?: string[]; searchKeywords?: string[]; description?: string }> = {
+  "Telmisartan 40": { searchAliases: ["Telma 40", "Telmikind 40"], description: "Telmisartan 40 mg tablets" },
+  "Paracetamol 650": { searchAliases: ["Dolo 650", "Dolo650"], searchKeywords: ["fever", "pain"] },
+  "Metformin 500": { searchAliases: ["Glycomet 500", "Glucophage 500"] },
+  "Amlodipine 5": { searchAliases: ["Amlong 5", "Amlodac 5"] },
+};
 export const MEDS: M[] = [
-  { name: "Metformin 500", generic: "Metformin", brand: "Glycomet", strength: "500 mg", form: "Tablet", packSize: "20 tablets", category: "Diabetes", mrp: 32, prescriptionRequired: true, restricted: false },
-  { name: "Glimepiride 1", generic: "Glimepiride", brand: "Amaryl", strength: "1 mg", form: "Tablet", packSize: "30 tablets", category: "Diabetes", mrp: 118, prescriptionRequired: true, restricted: false },
-  { name: "Telmisartan 40", generic: "Telmisartan", brand: "Telma", strength: "40 mg", form: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 142, prescriptionRequired: true, restricted: false },
-  { name: "Amlodipine 5", generic: "Amlodipine", brand: "Amlong", strength: "5 mg", form: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 58, prescriptionRequired: true, restricted: false },
-  { name: "Thyronorm 50", generic: "Levothyroxine", brand: "Thyronorm", strength: "50 mcg", form: "Tablet", packSize: "100 tablets", category: "Thyroid", mrp: 218, prescriptionRequired: true, restricted: false },
-  { name: "Asthalin Inhaler", generic: "Salbutamol", brand: "Asthalin", strength: "100 mcg/dose", form: "Inhaler", packSize: "200 doses", category: "Asthma", mrp: 168, prescriptionRequired: true, restricted: false },
-  { name: "Paracetamol 650", generic: "Paracetamol", brand: "Dolo", strength: "650 mg", form: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 33, prescriptionRequired: false, restricted: false },
-  { name: "Crocin Advance", generic: "Paracetamol", brand: "Crocin", strength: "500 mg", form: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 24, prescriptionRequired: false, restricted: false },
-  { name: "Ibuprofen 400", generic: "Ibuprofen", brand: "Brufen", strength: "400 mg", form: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 28, prescriptionRequired: false, restricted: false },
-  { name: "Amoxicillin 500", generic: "Amoxicillin", brand: "Mox", strength: "500 mg", form: "Capsule", packSize: "10 capsules", category: "Antibiotic", mrp: 74, prescriptionRequired: true, restricted: false },
-  { name: "Azithromycin 500", generic: "Azithromycin", brand: "Azithral", strength: "500 mg", form: "Tablet", packSize: "5 tablets", category: "Antibiotic", mrp: 118, prescriptionRequired: true, restricted: false },
-  { name: "Alprazolam 0.25", generic: "Alprazolam", brand: "Alprax", strength: "0.25 mg", form: "Tablet", packSize: "10 tablets", category: "Mental Health", mrp: 24, prescriptionRequired: true, restricted: true },
-  { name: "Pantoprazole 40", generic: "Pantoprazole", brand: "Pan", strength: "40 mg", form: "Tablet", packSize: "15 tablets", category: "Stomach", mrp: 168, prescriptionRequired: true, restricted: false },
-  { name: "ORS Electral", generic: "Oral Rehydration Salts", brand: "Electral", strength: "21.8 g", form: "Sachet", packSize: "5 sachets", category: "Stomach", mrp: 40, prescriptionRequired: false, restricted: false },
-  { name: "Cetirizine 10", generic: "Cetirizine", brand: "Okacet", strength: "10 mg", form: "Tablet", packSize: "10 tablets", category: "Cold & Cough", mrp: 22, prescriptionRequired: false, restricted: false },
-  { name: "Benadryl Cough Syrup", generic: "Diphenhydramine", brand: "Benadryl", strength: "150 ml", form: "Syrup", packSize: "150 ml", category: "Cold & Cough", mrp: 98, prescriptionRequired: false, restricted: false },
-  { name: "Vitamin D3 60K", generic: "Cholecalciferol", brand: "Uprise-D3", strength: "60000 IU", form: "Capsule", packSize: "4 capsules", category: "Vitamins", mrp: 130, prescriptionRequired: false, restricted: false },
-  { name: "Betadine Ointment", generic: "Povidone Iodine", brand: "Betadine", strength: "5%", form: "Ointment", packSize: "20 g", category: "Skin", mrp: 86, prescriptionRequired: false, restricted: false },
-  { name: "Digital Thermometer", generic: "Thermometer", brand: "Dr Morepen", strength: "—", form: "Device", packSize: "1 unit", category: "Health Essentials", mrp: 210, prescriptionRequired: false, restricted: false },
-  { name: "Insulin Glargine Pen", generic: "Insulin Glargine", brand: "Basalog", strength: "100 IU/ml", form: "Injection", packSize: "3 ml pen", category: "Diabetes", mrp: 640, prescriptionRequired: true, restricted: false },
+  { name: "Metformin 500", genericName: "Metformin", brand: "Glycomet", strength: "500 mg", dosageForm: "Tablet", packSize: "20 tablets", category: "Diabetes", mrp: 32, prescriptionRequired: true, restricted: false },
+  { name: "Glimepiride 1", genericName: "Glimepiride", brand: "Amaryl", strength: "1 mg", dosageForm: "Tablet", packSize: "30 tablets", category: "Diabetes", mrp: 118, prescriptionRequired: true, restricted: false },
+  { name: "Telmisartan 40", genericName: "Telmisartan", brand: "Telma", strength: "40 mg", dosageForm: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 142, prescriptionRequired: true, restricted: false },
+  { name: "Amlodipine 5", genericName: "Amlodipine", brand: "Amlong", strength: "5 mg", dosageForm: "Tablet", packSize: "30 tablets", category: "Blood Pressure", mrp: 58, prescriptionRequired: true, restricted: false },
+  { name: "Thyronorm 50", genericName: "Levothyroxine", brand: "Thyronorm", strength: "50 mcg", dosageForm: "Tablet", packSize: "100 tablets", category: "Thyroid", mrp: 218, prescriptionRequired: true, restricted: false },
+  { name: "Asthalin Inhaler", genericName: "Salbutamol", brand: "Asthalin", strength: "100 mcg/dose", dosageForm: "Inhaler", packSize: "200 doses", category: "Asthma", mrp: 168, prescriptionRequired: true, restricted: false },
+  { name: "Paracetamol 650", genericName: "Paracetamol", brand: "Dolo", strength: "650 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 33, prescriptionRequired: false, restricted: false },
+  { name: "Crocin Advance", genericName: "Paracetamol", brand: "Crocin", strength: "500 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 24, prescriptionRequired: false, restricted: false },
+  { name: "Ibuprofen 400", genericName: "Ibuprofen", brand: "Brufen", strength: "400 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Pain & Fever", mrp: 28, prescriptionRequired: false, restricted: false },
+  { name: "Amoxicillin 500", genericName: "Amoxicillin", brand: "Mox", strength: "500 mg", dosageForm: "Capsule", packSize: "10 capsules", category: "Antibiotic", mrp: 74, prescriptionRequired: true, restricted: false },
+  { name: "Azithromycin 500", genericName: "Azithromycin", brand: "Azithral", strength: "500 mg", dosageForm: "Tablet", packSize: "5 tablets", category: "Antibiotic", mrp: 118, prescriptionRequired: true, restricted: false },
+  { name: "Alprazolam 0.25", genericName: "Alprazolam", brand: "Alprax", strength: "0.25 mg", dosageForm: "Tablet", packSize: "10 tablets", category: "Mental Health", mrp: 24, prescriptionRequired: true, restricted: true },
+  { name: "Pantoprazole 40", genericName: "Pantoprazole", brand: "Pan", strength: "40 mg", dosageForm: "Tablet", packSize: "15 tablets", category: "Stomach", mrp: 168, prescriptionRequired: true, restricted: false },
+  { name: "ORS Electral", genericName: "Oral Rehydration Salts", brand: "Electral", strength: "21.8 g", dosageForm: "Sachet", packSize: "5 sachets", category: "Stomach", mrp: 40, prescriptionRequired: false, restricted: false },
+  { name: "Cetirizine 10", genericName: "Cetirizine", brand: "Okacet", strength: "10 mg", dosageForm: "Tablet", packSize: "10 tablets", category: "Cold & Cough", mrp: 22, prescriptionRequired: false, restricted: false },
+  { name: "Benadryl Cough Syrup", genericName: "Diphenhydramine", brand: "Benadryl", strength: "150 ml", dosageForm: "Syrup", packSize: "150 ml", category: "Cold & Cough", mrp: 98, prescriptionRequired: false, restricted: false },
+  { name: "Vitamin D3 60K", genericName: "Cholecalciferol", brand: "Uprise-D3", strength: "60000 IU", dosageForm: "Capsule", packSize: "4 capsules", category: "Vitamins", mrp: 130, prescriptionRequired: false, restricted: false },
+  { name: "Betadine Ointment", genericName: "Povidone Iodine", brand: "Betadine", strength: "5%", dosageForm: "Ointment", packSize: "20 g", category: "Skin", mrp: 86, prescriptionRequired: false, restricted: false },
+  { name: "Digital Thermometer", genericName: "Thermometer", brand: "Dr Morepen", strength: "—", dosageForm: "Device", packSize: "1 unit", category: "Health Essentials", mrp: 210, prescriptionRequired: false, restricted: false },
+  { name: "Insulin Glargine Pen", genericName: "Insulin Glargine", brand: "Basalog", strength: "100 IU/ml", dosageForm: "Injection", packSize: "3 ml pen", category: "Diabetes", mrp: 640, prescriptionRequired: true, restricted: false },
 ];
 
 /** Stable ids used by tests and the smoke script. */
@@ -93,7 +118,7 @@ const PNG_1PX = Uint8Array.from(Buffer.from("89504e470d0a1a0a0000000d49484452000
 export function buildSeed(): Db {
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 8);
   const consent = { healthData: true, marketing: false, acceptedAt: hoursAgo(24 * 30) };
-  const medicines: T.Medicine[] = MEDS.map((m, i) => ({ ...m, id: `med_${i + 1}` }));
+  const medicines: T.Medicine[] = MEDS.map((m, i) => buildMedicine(`med_${i + 1}`, { ...m, manufacturer: MAKERS[m.brand] ?? "Various", ...(EXTRA[m.name] ?? {}) }, hoursAgo(24 * 120)));
 
   // ---------- Pharmacies (4 verified, 1 pending KYC) ----------
   const pharmacies: T.Pharmacy[] = [
@@ -137,7 +162,11 @@ export function buildSeed(): Db {
 
   // ---------- Users ----------
   const mkUser = (id: string, name: string, mobile: string, email: string | undefined, role: T.Role, partnerId?: string, lang: "en" | "hi" = "en"): T.User =>
-    ({ id, name, mobile, email, passwordHash: hash, role, partnerId, language: lang, consent, createdAt: hoursAgo(24 * 90) });
+    ({
+      id, name, mobile, email, passwordHash: hash, role, partnerId, language: lang, consent, createdAt: hoursAgo(24 * 90),
+      preferences: { ...DEFAULT_PREFERENCES }, status: "ACTIVE", mobileVerifiedAt: hoursAgo(24 * 90),
+      pincode: role === "CUSTOMER" ? "261001" : undefined, district: role === "CUSTOMER" ? "Sitapur" : undefined,
+    });
   const users: T.User[] = [
     mkUser("u_1", "Asha Verma", "9876543210", "asha@example.com", "CUSTOMER"),
     mkUser("u_2", "Rajesh Kumar", "9876500002", "rajesh@example.com", "CUSTOMER", undefined, "hi"),
@@ -152,7 +181,7 @@ export function buildSeed(): Db {
     mkUser("u_dp3", "Imran Ali", "9822200003", "rider3@example.com", "DELIVERY_PARTNER", "dp_3", "hi"),
     mkUser("u_dp4", "Vikas Pal", "9822200004", "rider4@example.com", "DELIVERY_PARTNER", "dp_4", "hi"),
     mkUser("u_dp5", "Ajay Tiwari", "9822200005", "rider5@example.com", "DELIVERY_PARTNER", "dp_5", "hi"),
-    mkUser("u_ad", "Platform Admin", "9800000001", "admin@example.com", "SUPER_ADMIN"),
+    { ...mkUser("u_ad", "Platform Admin", "9800000001", "admin@example.com", "SUPER_ADMIN"), mfa: { enabled: false, method: "SMS_OTP" as const } },
   ];
 
   const familyMembers: T.FamilyMember[] = [
@@ -273,6 +302,42 @@ export function buildSeed(): Db {
     { id: "req_2", userId: "u_3", medicineQuery: "Digene gel", strength: "200 ml", quantity: 1, mobile: "9876500003", pincode: "261121", status: "FOUND", expiresAt: daysAhead(1), createdAt: hoursAgo(20) },
   ];
 
+  // Two applicants for the admin review queue: one waiting for review, one half-finished draft
+  const applicantUsers: T.User[] = [
+    { ...mkUser("u_app1", "Neha Srivastava", "9811100031", undefined, "PHARMACY_ADMIN"), passwordHash: undefined, pincode: undefined, district: undefined },
+    { ...mkUser("u_app2", "Arjun Mishra", "9822200031", undefined, "DELIVERY_PARTNER"), passwordHash: undefined, pincode: undefined, district: undefined },
+  ];
+  users.push(...applicantUsers);
+  const evt = (id: string, type: T.ApplicationEvent["type"], at: string, over: Partial<T.ApplicationEvent> = {}): T.ApplicationEvent => ({ id, type, at, actorId: over.actorId ?? "u_app1", actorRole: over.actorRole ?? "PHARMACY_ADMIN", ...over });
+  const partnerApplications: T.PartnerApplication[] = [
+    {
+      id: "app_1", type: "PHARMACY", userId: "u_app1", status: "SUBMITTED", step: 8, createdAt: hoursAgo(30), updatedAt: hoursAgo(5), submittedAt: hoursAgo(5),
+      data: {
+        owner: { ownerName: "Neha Srivastava", email: "neha@example.com" },
+        store: { storeName: "Sanjeevani Medical Hall", storeType: "RETAIL" },
+        address: { address: "Gandhi Chowk, Sitapur", area: "Gandhi Chowk", town: "Sitapur", district: "Sitapur", state: "Uttar Pradesh", pincode: "261001", landmark: "Opposite the post office" },
+        license: { drugLicenseNumber: "UP-SIT-25-9001 (demo)", validTill: "2029-12-31", issuingState: "Uttar Pradesh", gstin: "09ABCDE1234F1Z5" },
+        pharmacist: { pharmacistName: "Mohit Verma", registrationNumber: "UPPC-44321", pharmacistMobile: "9811100032" },
+        delivery: { servicePincodes: ["261001"], radiusKm: 6, openTime: "09:00", closeTime: "21:00", priorityDelivery: false, avgPrepMinutes: 15 },
+        inventory: { plan: "CSV_AFTER_APPROVAL" },
+      },
+      events: [evt("ev_a1", "STARTED", hoursAgo(30)), evt("ev_a2", "SUBMITTED", hoursAgo(5), { fromStatus: "DRAFT", toStatus: "SUBMITTED" })],
+    },
+    {
+      id: "app_2", type: "RIDER", userId: "u_app2", status: "DRAFT", step: 2, createdAt: hoursAgo(3), updatedAt: hoursAgo(2),
+      data: { personal: { fullName: "Arjun Mishra" }, address: { address: "Ward 4, Biswan", town: "Biswan", district: "Sitapur", state: "Uttar Pradesh", pincode: "261125" } },
+      events: [evt("ev_b1", "STARTED", hoursAgo(3), { actorId: "u_app2", actorRole: "DELIVERY_PARTNER" })],
+    },
+  ];
+  const partnerDocuments: T.PartnerDocument[] = [];
+  const docFile = (id: string, appId: string, userId: string, kind: T.DocumentKind, fileName: string) => {
+    files.set(`${id}.png`, { bytes: PNG_1PX, mimeType: "image/png", ownerId: userId });
+    partnerDocuments.push({ id, applicationId: appId, uploadedBy: userId, kind, fileKey: `${id}.png`, fileName, mimeType: "image/png", sizeBytes: PNG_1PX.byteLength, status: "UPLOADED", createdAt: hoursAgo(6) });
+  };
+  docFile("doc_1", "app_1", "u_app1", "DRUG_LICENSE", "drug-licence.png");
+  docFile("doc_2", "app_1", "u_app1", "SHOP_IMAGE", "shop-front.png");
+  docFile("doc_3", "app_1", "u_app1", "PHARMACIST_CERTIFICATE", "pharmacist-certificate.png");
+
   // The OrderStatusHistory ledger, rebuilt from each order's recorded steps
   const orderStatusHistory: T.OrderStatusHistory[] = orders.flatMap((o) => o.statusHistory.map((e, i) => ({
     id: `osh_${o.id}_${i + 1}`, orderId: o.id, fromStatus: i === 0 ? undefined : o.statusHistory[i - 1].status, toStatus: e.status,
@@ -281,7 +346,9 @@ export function buildSeed(): Db {
   })));
 
   return {
-    users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory, deliveryPartners, deliveries, payments,
+    users, familyMembers, addresses, medicines, pharmacies, inventory, prescriptions, carts: [], orders, orderStatusHistory,
+    searchHistory: [], inventoryImports: [], matchReviews: [], sessions: [], otpChallenges: [], serviceAreaInterests: [], callbackRequests: [], assistedConsents: [], analytics: [],
+    partnerApplications, partnerDocuments, deliveryPartners, deliveries, payments,
     settlements: [
       { id: "set_1", partnerType: "PHARMACY", partnerId: "ph_1", periodStart: hoursAgo(24 * 37), periodEnd: hoursAgo(24 * 7), orderCount: 2, gross: orders[0].total + orders[6].total, commission: Math.round((orders[0].total + orders[6].total) * 0.08), net: Math.round((orders[0].total + orders[6].total) * 0.92), status: "PAID", createdAt: hoursAgo(24 * 7) },
       { id: "set_2", partnerType: "DELIVERY", partnerId: "dp_1", periodStart: hoursAgo(24 * 7), periodEnd: hoursAgo(0), orderCount: 1, gross: 45, commission: 0, net: 45, status: "PROCESSING", createdAt: hoursAgo(2) },
@@ -298,9 +365,9 @@ export function buildSeed(): Db {
       { id: "tk_2", userId: "u_2", subject: "Change of address", message: "How do I change the delivery address on a saved order?", status: "RESOLVED", createdAt: hoursAgo(48) },
     ],
     serviceAreas: [
-      { id: "sa_1", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "ACTIVE", launchSignups: [] },
-      { id: "sa_2", level: "PINCODE", name: "261121", state: "Uttar Pradesh", district: "Sitapur", pincode: "261121", status: "ACTIVE", launchSignups: [] },
-      { id: "sa_3", level: "PINCODE", name: "261125", state: "Uttar Pradesh", district: "Sitapur", pincode: "261125", status: "ACTIVE", launchSignups: [] },
+      { id: "sa_1", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "ACTIVE" },
+      { id: "sa_2", level: "PINCODE", name: "261121", state: "Uttar Pradesh", district: "Sitapur", pincode: "261121", status: "ACTIVE" },
+      { id: "sa_3", level: "PINCODE", name: "261125", state: "Uttar Pradesh", district: "Sitapur", pincode: "261125", status: "ACTIVE" },
     ],
     savedMedicines: [
       { id: "sv_1", userId: "u_1", familyMemberId: "fm_2", label: "Diabetes & Blood Pressure", items: [{ medicineId: MED.METFORMIN, quantity: 3 }, { medicineId: MED.TELMISARTAN, quantity: 1 }], everyDays: 30, nextRefillAt: daysAhead(4), reminderOn: true, preferredPharmacyId: "ph_1" },

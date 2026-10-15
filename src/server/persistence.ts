@@ -55,6 +55,17 @@ const SINKS: Sink[] = [
   simple("medicineRequestResponses", M.MedicineRequestResponse, "medicineRequestResponses"),
   simple("carts", M.Cart, "carts"),
   simple("orderStatusHistory", M.OrderStatusHistory, "orderStatusHistory"),
+  simple("sessions", M.Session, "sessions"),
+  simple("searchHistory", M.SearchHistory, "searchHistory"),
+  simple("inventoryImports", M.InventoryImport, "inventoryImports"),
+  simple("matchReviews", M.MedicineMatchReview, "matchReviews"),
+  simple("otpChallenges", M.OtpChallenge, "otpChallenges"),
+  simple("serviceAreaInterests", M.ServiceAreaInterest, "serviceAreaInterests"),
+  simple("partnerApplications", M.PartnerApplication, "partnerApplications"),
+  simple("partnerDocuments", M.PartnerDocument, "partnerDocuments"),
+  simple("callbackRequests", M.CallbackRequest, "callbackRequests"),
+  simple("assistedConsents", M.AssistedConsent, "assistedConsents"),
+  simple("analytics", M.AnalyticsEvent, "analytics"),
   {
     name: "orders", model: M.Order,
     // Items and the status timeline live in their own collections (orderItems, orderStatusHistory) and are joined back on load.
@@ -141,6 +152,7 @@ async function loadAll(): Promise<Db> {
   // Rows written by an older version of the app: fill fields added since.
   const now = new Date().toISOString();
   for (const i of target.inventory) i.lastUpdatedAt ??= now;
+  for (const u of target.users) { u.status ??= "ACTIVE"; u.preferences ??= { largeText: false, largeControls: false, simplified: false, highContrast: false }; }
   for (const r of target.medicineRequests) r.quantity ??= 1;
   return target;
 }
@@ -231,7 +243,9 @@ export async function initMongoStore(): Promise<void> {
     console.info("[persistence] empty database seeded with demo data");
   } else {
     // Databases written before the reservation/OTP-hash redesign cannot be read safely: stop with a clear instruction.
-    const legacy = await M.PharmacyInventory.collection.findOne({ stockQuantity: { $exists: false } });
+    const legacy = (await M.PharmacyInventory.collection.findOne({ stockQuantity: { $exists: false } }))
+      ?? (await M.ServiceArea.collection.findOne({ launchSignups: { $exists: true } }))
+      ?? (await M.Medicine.collection.findOne({ normalizedName: { $exists: false } }));
     if (legacy) throw new Error("This database was created by an older version of DawaDost. Run \"npm run db:reset\" to rebuild the demo data.");
     const loaded = await loadAll();
     setDb(loaded);

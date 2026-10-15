@@ -1,13 +1,25 @@
-import { inventoryItemSchema, parseCsv } from "@/lib/validation";
 import { isFinal } from "@/lib/order-machine";
-import { availableQuantity, type Pharmacy, type PharmacyInventory, type SessionUser } from "@/lib/types";
+import { availableQuantity, type ExpiryState, type Pharmacy, type PharmacyInventory, type SessionUser } from "@/lib/types";
+import { stockConfidence } from "../catalog/confidence";
 import { badRequest, conflict, forbidden, notFound } from "@/server/errors";
 import { audit, db, uid } from "@/server/store";
+import { track } from "@/server/analytics";
 
+/**
+ * The caller's pharmacy. This is the gate for EVERY pharmacy action (orders, stock, requests, reports):
+ * an applicant has no pharmacy yet, and a pharmacy that is not VERIFIED (pending, rejected, suspended) cannot sell.
+ */
 export function pharmacyOf(user: SessionUser): Pharmacy {
   const p = db().pharmacies.find((x) => x.id === user.partnerId);
-  if (!p) throw forbidden("No pharmacy is linked to this account");
+  if (!p) throw forbidden("Your pharmacy is not approved yet");
+  if (p.verification !== "VERIFIED") throw forbidden("Your pharmacy is not active. Please contact support.");
   return p;
+}
+
+/** The pharmacy as its own staff see it: the settlement account number is masked. */
+export function pharmacySettingsView(p: Pharmacy) {
+  const s = p.onboarding?.settlement;
+  return { ...p, onboarding: p.onboarding && { ...p.onboarding, settlement: s && { holderName: s.holderName, upiId: s.upiId, ifsc: s.ifsc, accountLast4: s.accountNumber?.slice(-4), savedAt: s.savedAt } } };
 }
 
 const startOfDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -15,89 +27,112 @@ const mask = (m: string) => `${m.slice(0, 2)}••••••${m.slice(-2)}`;
 
 // ───────────── Inventory ─────────────
 
+const DAY = 86400_000;
+
+/** EXPIRED stock is never sold but is kept (history, returns, audits). 30 / 90 day windows drive the alerts. */
+export function expiryStateOf(expiry: string, now = Date.now()): ExpiryState {
+  const left = Date.parse(expiry) - now;
+  return left <= 0 ? "EXPIRED" : left <= 30 * DAY ? "EXPIRING_30" : left <= 90 * DAY ? "EXPIRING_90" : "OK";
+}
+
 export function listInventory(user: SessionUser) {
   const p = pharmacyOf(user);
   const d = db();
+  const now = Date.now();
   return d.inventory
     .filter((i) => i.pharmacyId === p.id)
     .map((i) => {
       const m = d.medicines.find((x) => x.id === i.medicineId)!;
-      return { ...i, name: m.name, brand: m.brand, generic: m.generic, strength: m.strength, availableQuantity: availableQuantity(i), low: i.stockQuantity <= i.lowStockThreshold, expiringSoon: Date.parse(i.expiry) - Date.now() < 90 * 86400_000 };
+      const expiryState = expiryStateOf(i.expiry, now);
+      return {
+        ...i, status: i.status ?? "ACTIVE", name: m.name, brand: m.brand, generic: m.genericName, manufacturer: m.manufacturer, strength: m.strength, availableQuantity: availableQuantity(i),
+        low: i.stockQuantity <= i.lowStockThreshold, outOfStock: availableQuantity(i) === 0, expiryState, expiringSoon: expiryState === "EXPIRING_30" || expiryState === "EXPIRING_90",
+        expired: expiryState === "EXPIRED", daysToExpiry: Math.floor((Date.parse(i.expiry) - now) / DAY),
+        confidence: stockConfidence(i.lastUpdatedAt, now),
+        /** Can a customer buy this line right now? */
+        sellable: (i.status ?? "ACTIVE") === "ACTIVE" && expiryState !== "EXPIRED" && availableQuantity(i) > 0,
+      };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function upsertInventory(user: SessionUser, input: Omit<PharmacyInventory, "id" | "pharmacyId" | "lastUpdatedAt" | "reservedQuantity">, id?: string) {
-  const p = pharmacyOf(user);
-  const d = db();
-  if (!d.medicines.some((m) => m.id === input.medicineId)) throw badRequest("Unknown medicine");
-  const stamp = () => new Date().toISOString();
-  if (id) {
-    const row = d.inventory.find((i) => i.id === id);
-    if (!row) throw notFound();
-    if (row.pharmacyId !== p.id) throw forbidden();
-    if (input.stockQuantity < row.reservedQuantity) throw conflict(`${row.reservedQuantity} units are promised to open orders. Stock cannot go below that.`);
-    Object.assign(row, input, { lastUpdatedAt: stamp() });
-    audit(user, "INVENTORY_EDITED", "Inventory", row.id, { stockQuantity: row.stockQuantity, sellingPrice: row.sellingPrice });
-    return row;
-  }
-  const existing = d.inventory.find((i) => i.pharmacyId === p.id && i.medicineId === input.medicineId && i.batch === input.batch);
-  if (existing) {
-    if (input.stockQuantity < existing.reservedQuantity) throw conflict(`${existing.reservedQuantity} units are promised to open orders. Stock cannot go below that.`);
-    Object.assign(existing, input, { lastUpdatedAt: stamp() });
-    return existing;
-  }
-  const row: PharmacyInventory = { id: uid("inv"), pharmacyId: p.id, ...input, reservedQuantity: 0, lastUpdatedAt: stamp() };
-  d.inventory.push(row);
-  audit(user, "INVENTORY_ADDED", "Inventory", row.id, { medicineId: row.medicineId, stockQuantity: row.stockQuantity });
-  return row;
+type InventoryInput = Omit<PharmacyInventory, "id" | "pharmacyId" | "lastUpdatedAt" | "reservedQuantity" | "createdAt" | "updatedAt" | "updatedBy">;
+
+/** The rules every inventory write must pass, in one place. */
+function assertValidStock(input: InventoryInput, reserved: number) {
+  if (!Number.isInteger(input.stockQuantity) || input.stockQuantity < 0) throw badRequest("Stock cannot be negative", { stockQuantity: "Stock cannot be negative" });
+  if (input.stockQuantity < reserved) throw conflict(`${reserved} units are promised to open orders. Stock cannot go below that.`);
+  if (input.sellingPrice > input.mrp) throw badRequest("Selling price cannot be higher than MRP", { sellingPrice: "Selling price cannot be higher than MRP" });
+  if (input.mrp <= 0 || input.sellingPrice <= 0) throw badRequest("Prices must be more than zero");
 }
 
-/** Sets the shelf count. It can never go below the units already promised to open orders. */
-export function quickStockUpdate(user: SessionUser, id: string, stockQuantity: number) {
+export function upsertInventory(user: SessionUser, input: InventoryInput, id?: string) {
+  return writeInventoryRow(user, pharmacyOf(user), input, id);
+}
+
+/**
+ * The one place inventory rows are created or edited (manual entry, CSV import, admin match review all end here).
+ * `actor` may be pharmacy staff or an admin acting on a pharmacy's behalf; the pharmacy is passed in already authorised.
+ */
+export function writeInventoryRow(user: Pick<SessionUser, "id" | "role">, p: Pharmacy, input: InventoryInput, id?: string) {
+  const d = db();
+  const med = d.medicines.find((m) => m.id === input.medicineId);
+  if (!med) throw badRequest("Unknown medicine");
+  if (med.status !== "ACTIVE") throw badRequest("This medicine is not in the catalogue any more");
+  const now = new Date().toISOString();
+  const row = id ? d.inventory.find((i) => i.id === id) : d.inventory.find((i) => i.pharmacyId === p.id && i.medicineId === input.medicineId && i.batch === input.batch);
+  if (id && !row) throw notFound();
+  if (row) {
+    if (row.pharmacyId !== p.id) throw forbidden();
+    assertValidStock(input, row.reservedQuantity);
+    const before = { stock: row.stockQuantity, price: row.sellingPrice };
+    Object.assign(row, input, { status: input.status ?? row.status ?? "ACTIVE", lastUpdatedAt: now, updatedAt: now, updatedBy: user.id });
+    audit(user, "INVENTORY_EDITED", "Inventory", row.id, { from: before, stockQuantity: row.stockQuantity, sellingPrice: row.sellingPrice });
+    return row;
+  }
+  assertValidStock(input, 0);
+  const created: PharmacyInventory = { id: uid("inv"), pharmacyId: p.id, ...input, status: input.status ?? "ACTIVE", reservedQuantity: 0, lastUpdatedAt: now, createdAt: now, updatedAt: now, updatedBy: user.id };
+  d.inventory.push(created);
+  track("inventory_added", { userId: user.id }, { via: "manual" });
+  audit(user, "INVENTORY_ADDED", "Inventory", created.id, { medicineId: created.medicineId, stockQuantity: created.stockQuantity });
+  return created;
+}
+
+function ownRow(user: SessionUser, id: string): PharmacyInventory {
   const p = pharmacyOf(user);
   const row = db().inventory.find((i) => i.id === id);
   if (!row) throw notFound();
   if (row.pharmacyId !== p.id) throw forbidden();
-  if (!Number.isInteger(stockQuantity) || stockQuantity < 0 || stockQuantity > 100000) throw badRequest("Enter a valid quantity");
-  if (stockQuantity < row.reservedQuantity) throw conflict(`${row.reservedQuantity} units are promised to open orders. Stock cannot go below that.`);
-  const before = row.stockQuantity;
-  row.stockQuantity = stockQuantity;
-  row.lastUpdatedAt = new Date().toISOString();
-  audit(user, "STOCK_UPDATED", "Inventory", row.id, { from: before, to: stockQuantity });
   return row;
 }
 
-/**
- * CSV columns: medicine,batch,expiry,mrp,sellingPrice,quantity[,lowStockThreshold]
- * `medicine` matches a catalogue name (case-insensitive). Valid rows import; invalid rows are reported with their line number.
- */
-export function bulkUploadCsv(user: SessionUser, csv: string) {
-  const p = pharmacyOf(user);
-  const rows = parseCsv(csv);
-  if (!rows.length) throw badRequest("The file is empty");
-  const header = rows[0].map((h) => h.trim().toLowerCase());
-  const body = header.includes("medicine") ? rows.slice(1) : rows;
-  if (body.length > 2000) throw badRequest("Please upload at most 2000 rows at a time");
-  const d = db();
-  const errors: { row: number; error: string }[] = [];
-  let imported = 0;
-  body.forEach((cols, idx) => {
-    const line = idx + 2;
-    const med = d.medicines.find((m) => m.name.toLowerCase() === cols[0]?.trim().toLowerCase());
-    if (!med) return errors.push({ row: line, error: `Medicine "${cols[0]}" not found in catalogue` });
-    const parsed = inventoryItemSchema.safeParse({ medicineId: med.id, batch: cols[1], expiry: cols[2], mrp: cols[3], sellingPrice: cols[4], stockQuantity: cols[5], lowStockThreshold: cols[6] || 10 });
-    if (!parsed.success) return errors.push({ row: line, error: parsed.error.issues[0].message });
-    const existing = d.inventory.find((i) => i.pharmacyId === p.id && i.medicineId === med.id && i.batch === parsed.data.batch);
-    const stamp = new Date().toISOString();
-    if (existing) {
-      if (parsed.data.stockQuantity < existing.reservedQuantity) return errors.push({ row: line, error: `${existing.reservedQuantity} units are promised to open orders` });
-      Object.assign(existing, parsed.data, { lastUpdatedAt: stamp });
-    } else d.inventory.push({ id: uid("inv"), pharmacyId: p.id, ...parsed.data, reservedQuantity: 0, lastUpdatedAt: stamp });
-    imported++;
-  });
-  audit(user, "INVENTORY_BULK_UPLOAD", "Pharmacy", p.id, { imported, errors: errors.length });
-  return { imported, errors };
+/** Sets the shelf count (exact entry). It can never go below the units already promised to open orders, and never below zero. */
+export function quickStockUpdate(user: SessionUser, id: string, stockQuantity: number) {
+  const row = ownRow(user, id);
+  if (!Number.isInteger(stockQuantity) || stockQuantity < 0 || stockQuantity > 100000) throw badRequest("Enter a valid quantity");
+  if (stockQuantity < row.reservedQuantity) throw conflict(`${row.reservedQuantity} units are promised to open orders. Stock cannot go below that.`);
+  const before = row.stockQuantity;
+  const now = new Date().toISOString();
+  row.stockQuantity = stockQuantity;
+  row.lastUpdatedAt = now; row.updatedAt = now; row.updatedBy = user.id;
+  audit(user, "STOCK_UPDATED", "Inventory", row.id, { from: before, to: stockQuantity, low: stockQuantity <= row.lowStockThreshold });
+  return row;
+}
+
+/** + / − buttons: change the count by a small amount. Same rules as an exact entry. */
+export function adjustStock(user: SessionUser, id: string, delta: number) {
+  const row = ownRow(user, id);
+  if (!Number.isInteger(delta) || Math.abs(delta) > 10000) throw badRequest("Enter a whole number");
+  return quickStockUpdate(user, id, row.stockQuantity + delta);
+}
+
+export function setInventoryStatus(user: SessionUser, id: string, status: "ACTIVE" | "INACTIVE") {
+  const row = ownRow(user, id);
+  row.status = status;
+  const now = new Date().toISOString();
+  row.lastUpdatedAt = now; row.updatedAt = now; row.updatedBy = user.id;
+  audit(user, status === "ACTIVE" ? "INVENTORY_ACTIVATED" : "INVENTORY_DEACTIVATED", "Inventory", row.id);
+  return row;
 }
 
 // ───────────── Dashboard, queues and finance ─────────────
@@ -118,7 +153,11 @@ export function pharmacyStats(user: SessionUser) {
     deliveredToday: today.length,
     revenueToday: sum(today),
     revenueTotal: sum(delivered),
-    lowStock: d.inventory.filter((i) => i.pharmacyId === p.id && i.stockQuantity <= i.lowStockThreshold).length,
+    lowStock: d.inventory.filter((i) => i.pharmacyId === p.id && (i.status ?? "ACTIVE") === "ACTIVE" && expiryStateOf(i.expiry) !== "EXPIRED" && i.stockQuantity <= i.lowStockThreshold).length,
+    expired: d.inventory.filter((i) => i.pharmacyId === p.id && expiryStateOf(i.expiry) === "EXPIRED" && i.stockQuantity > 0).length,
+    expiring30: d.inventory.filter((i) => i.pharmacyId === p.id && expiryStateOf(i.expiry) === "EXPIRING_30" && i.stockQuantity > 0).length,
+    expiring90: d.inventory.filter((i) => i.pharmacyId === p.id && ["EXPIRING_30", "EXPIRING_90"].includes(expiryStateOf(i.expiry)) && i.stockQuantity > 0).length,
+    outOfStock: d.inventory.filter((i) => i.pharmacyId === p.id && (i.status ?? "ACTIVE") === "ACTIVE" && expiryStateOf(i.expiry) !== "EXPIRED" && availableQuantity(i) === 0).length,
     openRequests: d.medicineRequests.filter((r) => r.status === "SEARCHING" && p.servicePincodes.includes(r.pincode) && !d.medicineRequestResponses.some((x) => x.requestId === r.id && x.pharmacyId === p.id)).length,
   };
 }
@@ -207,6 +246,7 @@ export function updatePharmacySettings(user: SessionUser, patch: Partial<Pick<Ph
   const p = pharmacyOf(user);
   if (user.role !== "PHARMACY_ADMIN") throw forbidden("Only the pharmacy owner can change store settings");
   if (patch.acceptingOrders && p.verification !== "VERIFIED") throw forbidden("Your pharmacy must be verified before it can accept orders");
+  if (patch.acceptingOrders && !db().inventory.some((i) => i.pharmacyId === p.id && i.stockQuantity > 0)) throw conflict("Add your medicines first, then you can start accepting orders");
   Object.assign(p, patch);
   audit(user, "PHARMACY_SETTINGS_UPDATED", "Pharmacy", p.id, patch as Record<string, unknown>);
   return p;

@@ -6,7 +6,7 @@ import { validateUpload } from "@/lib/file-validation";
 import { MemoryRateLimiter } from "@/lib/rate-limit";
 import { signFileUrl, verifyFileSignature } from "@/lib/signed-url";
 import { signSession, verifySession } from "@/lib/auth";
-import { addressSchema, createOrderSchema, parseCsv, registerSchema } from "@/lib/validation";
+import { addressSchema, createOrderSchema, parseCsv, signupSchema } from "@/lib/validation";
 import { applyOffer, deliveryFee } from "@/lib/pricing";
 import { ORDER_STATUSES } from "@/lib/types";
 import { FINAL_STATUSES, TRANSITIONS, allowedNext, canTransition, happyPath, timeline } from "@/lib/order-machine";
@@ -96,8 +96,10 @@ describe("signed file URLs", () => {
 
 describe("sessions", () => {
   it("round-trips and rejects garbage", async () => {
-    const t = await signSession({ id: "u1", name: "A", role: "PHARMACIST", partnerId: "ph_1" });
-    expect(await verifySession(t)).toMatchObject({ id: "u1", role: "PHARMACIST", partnerId: "ph_1" });
+    const t = await signSession({ id: "u1", name: "A", role: "PHARMACIST", partnerId: "ph_1" }, { sessionId: "ses_1", expiresAt: new Date(Date.now() + 60_000) });
+    expect(await verifySession(t)).toMatchObject({ id: "u1", role: "PHARMACIST", partnerId: "ph_1", sessionId: "ses_1" });
+    const old = await signSession({ id: "u1", name: "A", role: "PHARMACIST" }, { sessionId: "ses_2", expiresAt: new Date(Date.now() - 60_000) });
+    expect(await verifySession(old)).toBeNull(); // expired
     expect(await verifySession(t + "x")).toBeNull();
     expect(await verifySession("nope")).toBeNull();
     expect(await verifySession(undefined)).toBeNull();
@@ -112,11 +114,14 @@ describe("validation", () => {
     expect(addressSchema.safeParse({ ...ok, pincode: "12" }).success).toBe(false);
     expect(addressSchema.safeParse({ ...ok, contactMobile: "1234567890" }).success).toBe(false);
   });
-  it("enforces strong registration with consent", () => {
-    const base = { name: "Asha", mobile: "9876543210", password: "abcdefg1", consentHealthData: true as const };
-    expect(registerSchema.safeParse(base).success).toBe(true);
-    expect(registerSchema.safeParse({ ...base, password: "short" }).success).toBe(false);
-    expect(registerSchema.safeParse({ ...base, consentHealthData: false }).success).toBe(false);
+  it("signup asks for only a name, language and pincode, and never accepts a role", () => {
+    const base = { signupToken: "x".repeat(30), name: "Asha", language: "hi" as const, pincode: "261001", acceptTerms: true as const };
+    expect(signupSchema.safeParse(base).success).toBe(true);
+    expect(signupSchema.safeParse({ ...base, language: "xx" }).success).toBe(false);
+    expect(signupSchema.safeParse({ ...base, acceptTerms: false }).success).toBe(false);
+    expect(signupSchema.safeParse({ ...base, role: "SUPER_ADMIN" }).success).toBe(false);
+    expect(signupSchema.safeParse({ ...base, allergies: "x" }).success).toBe(false); // no medical details at signup
+    expect(signupSchema.safeParse({ ...base, pincode: "12" }).success).toBe(false);
   });
   it("caps quantities and requires items", () => {
     const o = { pharmacyId: "p", addressId: "a", paymentMethod: "COD", items: [{ medicineId: "m", quantity: 99 }] };

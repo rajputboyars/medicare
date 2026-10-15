@@ -72,6 +72,13 @@
 /* Base size 17px; "Large text" raises every rem-based size. */
 html { font-size: 17px; -webkit-text-size-adjust: 100%; scroll-padding-top: 5rem; }
 html[data-large="true"] { font-size: 20px; }
+/* Large controls: every tappable thing is at least 56px, with more room around it */
+html[data-controls="true"] .tap { min-height: 3.5rem; min-width: 3.5rem; }
+html[data-controls="true"] button:not(.tap), html[data-controls="true"] [role="tab"], html[data-controls="true"] summary { min-height: 3.25rem; }
+html[data-controls="true"] input, html[data-controls="true"] select, html[data-controls="true"] textarea { min-height: 3.5rem; }
+html[data-controls="true"] ul > li + li { margin-top: 0.25rem; }
+/* Simple screen: only the main actions. Anything marked .nonessential is hidden. */
+html[data-simple="true"] .nonessential { display: none !important; }
 html[data-contrast="high"] { --color-muted: #2b3942; --color-line: #b9b2a4; --color-line-strong: #6e675a; }
 
 body {

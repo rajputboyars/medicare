@@ -7,9 +7,9 @@ import { offersFor, pincodeCenter, searchMedicines } from "@/server/features/med
 import { codeFor, deliveryOf, advanceAsPharmacy, assignRider, attachPrescription, cancelOrder, confirmPayment, createOrder, getOrderFor, pharmacyOrderView, quoteOrder, rejectOrder, reviewOrderPrescription, reviewPrescription, userSafeOrder } from "@/server/features/orders/orders.service";
 import { acceptDelivery, activeDeliveries, availableDeliveries, deliveryHistory, earningsSummary, riderStep, riderSummary, setAvailability } from "@/server/features/delivery/delivery.service";
 import { storePrescription } from "@/server/features/prescriptions/prescriptions.service";
-import { bulkUploadCsv, customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
+import { customersOf, paymentsOf, prescriptionQueue, quickStockUpdate, reportsOf, upsertInventory } from "@/server/features/pharmacy/pharmacy.service";
 import { createMedicineRequest, getCart, myRequests, openRequestsForPharmacy, repeatOrder, reorderSaved, respondToRequest, saveCart, saveFromOrder, sendDueRefillReminders } from "@/server/features/medicine-requests/requests.service";
-import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, registerPharmacy, registerRider, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/features/admin/admin.service";
+import { adminList, adminStats, attentionItems, coverageFor, generateSettlements, launchSignup, platformReports, setSettlementStatus, setVerification, updatePlatformSettings } from "@/server/features/admin/admin.service";
 
 const customer: SessionUser = { id: "u_1", name: "Asha", role: "CUSTOMER" };
 const pharmacist: SessionUser = { id: "u_rx", name: "Kavita", role: "PHARMACIST", partnerId: "ph_1" };
@@ -397,13 +397,6 @@ describe("rider workflow and privacy", () => {
 });
 
 describe("pharmacy portal data", () => {
-  it("imports CSV with per-row errors and updates stock", () => {
-    const csv = ["medicine,batch,expiry,mrp,sellingPrice,quantity", "Paracetamol 650,Z9,2030-01-01,33,30,100", "Unknown Pill,Z1,2030-01-01,10,9,5", "Metformin 500,Z2,2030-01-01,32,40,10"].join("\n");
-    const r = bulkUploadCsv(owner, csv);
-    expect(r.imported).toBe(1);
-    expect(r.errors.map((e) => e.row)).toEqual([3, 4]);
-    expect(r.errors[1].error).toMatch(/cannot exceed MRP/);
-  });
   it("only lets a pharmacy edit its own stock; same batch updates instead of duplicating", () => {
     const other = db().inventory.find((i) => i.pharmacyId === "ph_2")!;
     expect(() => quickStockUpdate(owner, other.id, 5)).toThrow();
@@ -470,23 +463,14 @@ describe("admin", () => {
     expect(coverageFor("261001").available).toBe(true);
     expect(coverageFor("110001").available).toBe(false);
     launchSignup("9000000009", "110001");
-    expect(db().serviceAreas.find((a) => a.pincode === "110001")!.launchSignups).toContain("9000000009");
+    expect(db().serviceAreaInterests.some((i) => i.pincode === "110001" && i.mobile === "9000000009")).toBe(true);
+    expect(db().serviceAreas.find((a) => a.pincode === "110001")!.status).toBe("COMING_SOON");
     expect(() => setVerification(admin, "pharmacies", "ph_5", "REJECTED")).toThrow(/reason/);
     setVerification(admin, "pharmacies", "ph_5", "VERIFIED");
     expect(db().pharmacies.find((p) => p.id === "ph_5")!.acceptingOrders).toBe(true);
     setVerification(admin, "pharmacies", "ph_5", "SUSPENDED", "Licence expired");
     expect(db().pharmacies.find((p) => p.id === "ph_5")!.acceptingOrders).toBe(false);
     expect(db().audit[0].action).toBe("VERIFICATION_SUSPENDED");
-  });
-  it("registers pharmacies and riders as pending; they cannot serve until verified", () => {
-    const { pharmacyId } = registerPharmacy({ ownerName: "A B", mobile: "9000011111", email: "new@pharm.example", password: "Strong123", name: "New Chemist", drugLicense: "UP-NEW-2026-1", address: "Main road", pincode: "261001", district: "Sitapur", servicePincodes: ["261001"], openTime: "09:00", closeTime: "21:00" });
-    expect(() => createOrder(customer, { ...base, pharmacyId, items: [{ medicineId: MED.PARACETAMOL, quantity: 1 }] })).toThrow(/not available/);
-    expect(() => registerPharmacy({ ownerName: "A", mobile: "9000022222", email: "x@y.example", password: "Strong123", name: "Dup", drugLicense: "UP-NEW-2026-1", address: "x y z", pincode: "261001", district: "Sitapur", servicePincodes: ["261001"], openTime: "09:00", closeTime: "21:00" })).toThrow(/already registered/);
-    const r = registerRider({ name: "New Rider", mobile: "9000033333", email: "nr@example.com", password: "Strong123", vehicle: "Scooter UP34 1234" });
-    const user: SessionUser = { id: db().users.find((u) => u.partnerId === r.partnerId)!.id, name: "New Rider", role: "DELIVERY_PARTNER", partnerId: r.partnerId };
-    expect(() => setAvailability(user, true)).toThrow(/verification/);
-    setVerification(admin, "riders", r.partnerId, "VERIFIED");
-    expect(setAvailability(user, true).available).toBe(true);
   });
   it("settlements: generated once per delivered order with commission, then progress forward only", () => {
     const o = readyOrder(); acceptDelivery(rider4, o.id);

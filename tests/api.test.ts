@@ -1,36 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { signSession } from "@/lib/auth";
 import { MED } from "@/server/seed";
 import { db, resetDb } from "@/server/store";
-import { toSession } from "@/server/features/accounts/accounts.service";
 import { codeFor, deliveryOf } from "@/server/features/orders/orders.service";
 import { rateLimiter } from "@/lib/rate-limit";
+import { call, jar, route, signIn } from "./helpers/http";
 
 /** These tests call the real route handlers. Only the cookie jar and request headers are faked. */
-const jar: { token?: string } = {};
-vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: (name: string) => (jar.token ? { name, value: jar.token } : undefined) }),
-  headers: async () => new Headers(),
-}));
+vi.mock("next/headers", async () => await import("./helpers/next-headers"));
 
-type Ctx = { params: Promise<Record<string, string>> };
-type Handler = (req: Request, ctx: Ctx) => Promise<Response>;
-interface Reply { status: number; body: { success: boolean; data: any; message: string | null; errors: { code: string; message: string; field?: string }[] | null; meta: any }; headers: Headers } // eslint-disable-line @typescript-eslint/no-explicit-any
-
-async function signIn(identifier?: string) {
-  jar.token = undefined;
-  if (!identifier) return;
-  const u = db().users.find((x) => x.mobile === identifier || x.email === identifier)!;
-  jar.token = await signSession(toSession(u));
-}
-
-async function call(handler: Handler, method: string, url: string, opts: { body?: unknown; params?: Record<string, string> } = {}): Promise<Reply> {
-  const req = new Request(`http://localhost${url}`, { method, headers: opts.body ? { "content-type": "application/json" } : {}, body: opts.body ? JSON.stringify(opts.body) : undefined });
-  const res = await handler(req, { params: Promise.resolve(opts.params ?? {}) });
-  return { status: res.status, body: await res.json(), headers: res.headers };
-}
-
-const route = async (path: string) => (await import(/* @vite-ignore */ `@/app/api/${path}/route`)) as Record<string, Handler>;
 const ASHA = "asha@example.com";
 const RAJESH = "rajesh@example.com";
 const OWNER = "pharmacy@example.com";
@@ -66,59 +43,6 @@ describe("response envelope", () => {
     expect(filtered.body.data.every((o: { status: string }) => o.status === "DELIVERED")).toBe(true);
     expect((await call(list, "GET", "/api/pharmacy/orders?sort=password:asc")).status).toBe(400);
     expect((await call(list, "GET", "/api/pharmacy/orders?limit=5000")).status).toBe(400);
-  });
-});
-
-describe("authentication", () => {
-  it("registers a customer, never exposes the password hash, and ignores any attempt to pick a role", async () => {
-    const { POST } = await route("auth/register");
-    const body = { name: "New Person", mobile: "9000000001", password: "Strong#123", consentHealthData: true };
-    const r = await call(POST, "POST", "/api/auth/register", { body });
-    expect(r.status).toBe(201);
-    expect(r.body.data.user.role).toBe("CUSTOMER");
-    expect(JSON.stringify(r.body)).not.toMatch(/passwordHash|\$2[aby]\$/);
-    expect(r.headers.get("set-cookie")).toMatch(/mc_session=.+HttpOnly/i);
-    const stored = db().users.find((u) => u.mobile === "9000000001")!;
-    expect(stored.passwordHash).toMatch(/^\$2[aby]\$/); // bcrypt, not plain text
-    expect(stored.passwordHash).not.toContain("Strong#123");
-    const sneaky = await call(POST, "POST", "/api/auth/register", { body: { ...body, mobile: "9000000002", role: "SUPER_ADMIN" } });
-    expect(sneaky.status).toBe(400);
-    expect(db().users.some((u) => u.mobile === "9000000002")).toBe(false);
-  });
-  it("login rejects wrong passwords with the same message for unknown accounts", async () => {
-    const { POST } = await route("auth/login");
-    const wrong = await call(POST, "POST", "/api/auth/login", { body: { identifier: ASHA, password: "Wrong#12345" } });
-    const unknown = await call(POST, "POST", "/api/auth/login", { body: { identifier: "nobody@example.com", password: "Wrong#12345" } });
-    expect(wrong.status).toBe(400);
-    expect(wrong.body.message).toBe(unknown.body.message);
-    const ok = await call(POST, "POST", "/api/auth/login", { body: { identifier: ASHA, password: "Demo@1234" } });
-    expect(ok.status).toBe(200);
-    expect(ok.headers.get("set-cookie")).toMatch(/HttpOnly/i);
-    expect(ok.headers.get("set-cookie")).toMatch(/SameSite=lax/i);
-    expect(JSON.stringify(ok.body)).not.toMatch(/passwordHash/);
-  });
-  it("login is rate limited", async () => {
-    const { POST } = await route("auth/login");
-    let last = 0;
-    for (let i = 0; i < 30; i++) last = (await call(POST, "POST", "/api/auth/login", { body: { identifier: ASHA, password: "Wrong#12345" } })).status;
-    expect(last).toBe(429);
-  });
-  it("/me needs a valid session; a forged token, or a token for a deleted account, is refused", async () => {
-    const { GET } = await route("auth/me");
-    const me = async () => (await call(GET, "GET", "/api/auth/me")).body.data.user;
-    expect(await me()).toBeNull(); // not signed in: answers "nobody", never another person's data
-    jar.token = "not.a.token";
-    expect(await me()).toBeNull();
-    await signIn(ASHA);
-    expect((await me()).email).toBe(ASHA);
-    expect(JSON.stringify(await me())).not.toMatch(/passwordHash/);
-    db().users = db().users.filter((u) => u.email !== ASHA);
-    expect(await me()).toBeNull();
-  });
-  it("a token whose role no longer matches the account is refused", async () => {
-    await signIn(ASHA);
-    db().users.find((u) => u.email === ASHA)!.role = "PHARMACIST";
-    expect((await call((await route("orders")).GET, "GET", "/api/orders")).status).toBe(401);
   });
 });
 

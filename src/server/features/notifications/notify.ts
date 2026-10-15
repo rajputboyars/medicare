@@ -12,6 +12,7 @@ export const EVENT_CHANNELS: Record<NotificationEvent, NotificationChannel[]> = 
   ORDER_CANCELLED: ["SMS", "PUSH"],
   REFILL_REMINDER: ["SMS", "WHATSAPP", "PUSH"],
   MEDICINE_FOUND: ["SMS", "WHATSAPP", "PUSH"],
+  APPLICATION_UPDATE: ["SMS", "PUSH"],
 };
 
 export interface ChannelProvider {

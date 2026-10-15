@@ -291,10 +291,10 @@ describe("service areas: controlled rollout", () => {
   });
   it("the most specific area wins: a district can be live while one pincode stays off, and the reverse", () => {
     const d = db();
-    d.serviceAreas = [{ id: "sa_d", level: "DISTRICT", name: "Sitapur", state: "Uttar Pradesh", district: "Sitapur", status: "ACTIVE", launchSignups: [] }, { id: "sa_p", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "DISABLED", launchSignups: [] }];
+    d.serviceAreas = [{ id: "sa_d", level: "DISTRICT", name: "Sitapur", state: "Uttar Pradesh", district: "Sitapur", status: "ACTIVE" }, { id: "sa_p", level: "PINCODE", name: "261001", state: "Uttar Pradesh", district: "Sitapur", pincode: "261001", status: "DISABLED" }];
     expect(coverageForLocation(loc).available).toBe(false);
     expect(coverageForLocation({ ...loc, pincode: "261121" }).available).toBe(true); // falls back to the district
-    d.serviceAreas = [{ id: "sa_s", level: "STATE", name: "Uttar Pradesh", state: "Uttar Pradesh", status: "ACTIVE", launchSignups: [] }, { id: "sa_t", level: "TOWN", name: "Biswan", state: "Uttar Pradesh", town: "Biswan", status: "COMING_SOON", launchSignups: [] }];
+    d.serviceAreas = [{ id: "sa_s", level: "STATE", name: "Uttar Pradesh", state: "Uttar Pradesh", status: "ACTIVE" }, { id: "sa_t", level: "TOWN", name: "Biswan", state: "Uttar Pradesh", town: "Biswan", status: "COMING_SOON" }];
     expect(coverageForLocation({ pincode: "261125", state: "Uttar Pradesh", town: "Biswan" }).available).toBe(false);
     expect(coverageForLocation({ pincode: "261125", state: "Uttar Pradesh", town: "Sitapur" }).available).toBe(true);
     d.serviceAreas = [];
@@ -309,7 +309,7 @@ describe("service areas: controlled rollout", () => {
     d_addPincodeArea("261125");
     expect(() => createOrder(customer, { ...base, pharmacyId: "ph_3", addressId: "ad_2", items: [{ medicineId: MED.METFORMIN, quantity: 1 }] })).toThrow();
   });
-  function d_addPincodeArea(p: string) { if (!db().serviceAreas.some((a) => a.pincode === p)) db().serviceAreas.push({ id: "sa_x", level: "PINCODE", name: p, state: "Uttar Pradesh", pincode: p, status: "ACTIVE", launchSignups: [] }); }
+  function d_addPincodeArea(p: string) { if (!db().serviceAreas.some((a) => a.pincode === p)) db().serviceAreas.push({ id: "sa_x", level: "PINCODE", name: p, state: "Uttar Pradesh", pincode: p, status: "ACTIVE" }); }
 });
 
 describe("pharmacy verification at checkout", () => {

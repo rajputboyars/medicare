@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LANGUAGE_CODES } from "@/i18n/languages";
 
 export const mobileSchema = z
   .string()
@@ -15,18 +16,37 @@ export const loginSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters").max(128),
 });
 
-export const registerSchema = z.object({
+const languageSchema = z.enum(LANGUAGE_CODES);
+
+/** Step 1 of sign-in: a mobile number. Nothing else is asked yet. */
+export const otpRequestSchema = z.object({ mobile: mobileSchema }).strict();
+export const otpVerifySchema = z.object({ challengeId: z.string().min(3).max(80), code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code") }).strict();
+
+/** Minimal profile: name, language, pincode. Medical and address details come later, when they are needed. */
+export const signupSchema = z.object({
+  signupToken: z.string().min(20).max(2000),
   name: z.string().trim().min(2, "Enter your name").max(80),
-  mobile: mobileSchema,
-  email: z.string().trim().email().optional().or(z.literal("")),
-  password: z
-    .string()
-    .min(8, "Use at least 8 characters")
-    .max(128)
-    .regex(/[A-Za-z]/, "Include a letter")
-    .regex(/\d/, "Include a number"),
-  consentHealthData: z.literal(true, { error: "Consent is needed to process your health information" }),
+  language: languageSchema.default("en"),
+  pincode: pincodeSchema,
+  acceptTerms: z.literal(true, { error: "Please accept the Terms of Use to continue" }),
 }).strict(); // a signup can never choose its own role
+
+export const mfaVerifySchema = z.object({ mfaToken: z.string().min(20).max(2000), code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code") }).strict();
+export const elevateSchema = z.object({ password: z.string().min(1).max(128) }).strict();
+export const preferencesSchema = z.object({
+  largeText: z.boolean().optional(), largeControls: z.boolean().optional(), simplified: z.boolean().optional(), highContrast: z.boolean().optional(),
+  language: languageSchema.optional(),
+}).strict();
+export const locationQuerySchema = z.object({
+  pincode: pincodeSchema.optional(),
+  lat: z.coerce.number().min(-90).max(90).optional(), lng: z.coerce.number().min(-180).max(180).optional(),
+}).refine((v) => v.pincode || (v.lat !== undefined && v.lng !== undefined), { message: "Enter your pincode" });
+export const callbackSchema = z.object({
+  mobile: mobileSchema,
+  name: z.string().trim().max(80).optional().or(z.literal("")),
+  area: z.string().trim().min(2, "Tell us your area or village").max(100),
+  reason: z.string().trim().min(3, "Tell us how we can help").max(300),
+}).strict();
 
 export const addressSchema = z.object({
   label: z.string().trim().min(1).max(30).default("Home"),
@@ -41,6 +61,8 @@ export const addressSchema = z.object({
   landmark: z.string().trim().min(3, "Add a landmark so the rider can find you").max(120),
   houseDescription: z.string().trim().min(2).max(160),
   location: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).optional(),
+  deliveryNotes: z.string().trim().max(160).optional(),
+  isDefault: z.boolean().optional(),
 });
 
 export const familyMemberSchema = z.object({
